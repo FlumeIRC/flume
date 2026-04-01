@@ -1069,6 +1069,9 @@ async fn process_input(
             "server" => {
                 handle_server_command(args, app);
             }
+            "set" => {
+                handle_set_command(args, app);
+            }
             "save" => {
                 match flume_core::config::save_irc_config(&app.irc_config) {
                     Ok(()) => app.system_message(&format!(
@@ -1599,6 +1602,7 @@ fn show_help(app: &mut App) {
     app.system_message("    /generate layout <desc>  — Generate a layout");
     app.system_message("    /generate accept/reject  — Save or discard generation");
     app.system_message("  Other:");
+    app.system_message("    /set [key] [value]       — View or change settings");
     app.system_message("    /quote <raw line>        — Send raw IRC line");
     app.system_message("    /go <name or number>     — Jump to buffer/server");
     app.system_message("    /keys                    — Show keybinding info");
@@ -1771,6 +1775,28 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("/search <pattern>");
             app.system_message("  Search the active buffer for a text pattern.");
             app.system_message("  Matching lines are highlighted. /search with no args clears.");
+        }
+        "set" => {
+            app.system_message("/set [section.key] [value]");
+            app.system_message("  View or change settings (saved to config.toml).");
+            app.system_message("");
+            app.system_message("  /set                           — list all settings");
+            app.system_message("  /set ui                        — list ui section");
+            app.system_message("  /set ui.theme                  — show current value");
+            app.system_message("  /set ui.theme solarized-dark   — set and save");
+            app.system_message("");
+            app.system_message("  Sections: general, ui, logging, notifications, ctcp, llm, dcc");
+            app.system_message("");
+            app.system_message("  Common settings:");
+            app.system_message("    general.default_nick        — default nickname");
+            app.system_message("    general.quit_message         — quit message");
+            app.system_message("    ui.theme                     — active theme");
+            app.system_message("    ui.show_join_part            — show join/part messages (true/false)");
+            app.system_message("    ui.show_hostmask_on_join     — show user@host on joins");
+            app.system_message("    ui.keybindings.mode          — emacs or vi");
+            app.system_message("    notifications.highlight_bell — terminal bell on highlight");
+            app.system_message("    llm.provider                 — anthropic or openai");
+            app.system_message("    dcc.enabled                  — enable DCC (true/false)");
         }
         _ => {
             // Check if it's a script-registered command
@@ -2188,6 +2214,157 @@ fn handle_generate_init_input(text: &str, step: u8, app: &mut App) {
         _ => {
             app.generate_init_step = None;
         }
+    }
+}
+
+fn handle_set_command(args: &str, app: &mut App) {
+    let config_path = flume_core::config::config_dir().join("config.toml");
+    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let mut config: toml::Table = toml::from_str(&existing).unwrap_or_default();
+
+    if args.is_empty() {
+        // List all settings
+        app.system_message("Current settings (config.toml):");
+        list_toml_table(&config, "", app);
+        app.system_message(&format!("  Config file: {}", config_path.display()));
+        app.system_message("  Usage: /set <key> <value> | /set <section>");
+        return;
+    }
+
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let key = parts[0];
+    let value = parts.get(1).map(|s| s.trim());
+
+    if value.is_none() {
+        // Show a section or single key
+        let dot_parts: Vec<&str> = key.split('.').collect();
+        if dot_parts.len() == 1 {
+            // Show a section
+            if let Some(toml::Value::Table(t)) = config.get(key) {
+                app.system_message(&format!("[{}]:", key));
+                for (k, v) in t {
+                    app.system_message(&format!("  {}.{} = {}", key, k, format_toml_value(v)));
+                }
+            } else {
+                app.system_message(&format!("No section '{}'. Sections: general, ui, logging, notifications, ctcp, llm, dcc", key));
+            }
+        } else {
+            // Show a single key
+            let section = dot_parts[0];
+            let field = dot_parts[1];
+            if let Some(toml::Value::Table(t)) = config.get(section) {
+                if let Some(v) = t.get(field) {
+                    app.system_message(&format!("{} = {}", key, format_toml_value(v)));
+                } else {
+                    app.system_message(&format!("'{}' not set (using default)", key));
+                }
+            } else {
+                app.system_message(&format!("No section '{}'", section));
+            }
+        }
+        return;
+    }
+
+    let value_str = value.unwrap();
+
+    // Parse dotted key: section.field
+    let dot_parts: Vec<&str> = key.split('.').collect();
+    if dot_parts.len() != 2 {
+        app.system_message("Key must be section.field (e.g., ui.theme, general.default_nick)");
+        return;
+    }
+
+    let section = dot_parts[0];
+    let field = dot_parts[1];
+
+    // Parse value type
+    let toml_value = if value_str == "true" {
+        toml::Value::Boolean(true)
+    } else if value_str == "false" {
+        toml::Value::Boolean(false)
+    } else if let Ok(n) = value_str.parse::<i64>() {
+        toml::Value::Integer(n)
+    } else if let Ok(f) = value_str.parse::<f64>() {
+        toml::Value::Float(f)
+    } else {
+        toml::Value::String(value_str.to_string())
+    };
+
+    // Insert into config
+    let table = config
+        .entry(section)
+        .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    if let toml::Value::Table(ref mut t) = table {
+        t.insert(field.to_string(), toml_value.clone());
+    }
+
+    // Save to disk
+    let _ = std::fs::create_dir_all(flume_core::config::config_dir());
+    match toml::to_string_pretty(&config) {
+        Ok(toml_str) => {
+            match std::fs::write(&config_path, &toml_str) {
+                Ok(()) => {
+                    app.system_message(&format!("{} = {} (saved)", key, format_toml_value(&toml_value)));
+
+                    // Apply some settings immediately
+                    match key {
+                        "ui.theme" => {
+                            if let toml::Value::String(ref name) = toml_value {
+                                app.theme_switch = Some(name.clone());
+                            }
+                        }
+                        "ui.show_join_part" => {
+                            if let toml::Value::Boolean(b) = toml_value {
+                                app.show_join_part = b;
+                            }
+                        }
+                        "ui.show_hostmask_on_join" => {
+                            if let toml::Value::Boolean(b) = toml_value {
+                                app.show_hostmask_on_join = b;
+                            }
+                        }
+                        _ => {
+                            app.system_message("  (some settings require restart to take effect)");
+                        }
+                    }
+                }
+                Err(e) => app.system_message(&format!("Failed to save: {}", e)),
+            }
+        }
+        Err(e) => app.system_message(&format!("Failed to serialize config: {}", e)),
+    }
+}
+
+fn list_toml_table(table: &toml::Table, prefix: &str, app: &mut App) {
+    for (k, v) in table {
+        let full_key = if prefix.is_empty() {
+            k.clone()
+        } else {
+            format!("{}.{}", prefix, k)
+        };
+        match v {
+            toml::Value::Table(t) => {
+                list_toml_table(t, &full_key, app);
+            }
+            _ => {
+                app.system_message(&format!("  {} = {}", full_key, format_toml_value(v)));
+            }
+        }
+    }
+}
+
+fn format_toml_value(v: &toml::Value) -> String {
+    match v {
+        toml::Value::String(s) => format!("\"{}\"", s),
+        toml::Value::Integer(n) => n.to_string(),
+        toml::Value::Float(f) => f.to_string(),
+        toml::Value::Boolean(b) => b.to_string(),
+        toml::Value::Array(a) => {
+            let items: Vec<String> = a.iter().map(format_toml_value).collect();
+            format!("[{}]", items.join(", "))
+        }
+        toml::Value::Table(_) => "{...}".to_string(),
+        _ => format!("{}", v),
     }
 }
 
