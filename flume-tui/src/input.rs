@@ -968,12 +968,18 @@ async fn process_input(
             }
             "buffer" | "buf" | "b" => {
                 if args.is_empty() {
-                    // List buffers for active server
+                    // List buffers for active server (alphabetical, matching buffer list panel)
                     if let Some(ss) = app.active_server_state() {
-                        let lines: Vec<String> = ss.buffer_order.iter().enumerate().map(|(i, name)| {
+                        let mut sorted: Vec<&String> = ss.buffer_order.iter().collect();
+                        sorted.sort_by(|a, b| {
+                            if a.is_empty() { return std::cmp::Ordering::Less; }
+                            if b.is_empty() { return std::cmp::Ordering::Greater; }
+                            a.to_lowercase().cmp(&b.to_lowercase())
+                        });
+                        let lines: Vec<String> = sorted.iter().enumerate().map(|(i, name)| {
                             let display = if name.is_empty() { "server" } else { name.as_str() };
-                            let active = if *name == ss.active_buffer { " *" } else { "" };
-                            let unread = ss.buffers.get(name).map(|b| b.unread_count).unwrap_or(0);
+                            let active = if **name == ss.active_buffer { " *" } else { "" };
+                            let unread = ss.buffers.get(name.as_str()).map(|b| b.unread_count).unwrap_or(0);
                             if unread > 0 {
                                 format!("  {}: {} ({} unread){}", i + 1, display, unread, active)
                             } else {
@@ -1005,12 +1011,18 @@ async fn process_input(
                     app.viewing_global = true;
                 } else if let Ok(num) = args.parse::<usize>() {
                     app.viewing_global = false;
-                    // Jump by window number (1-indexed)
+                    // Jump by window number (1-indexed, alphabetical order)
                     if num == 0 {
                         app.system_message("Window numbers start at 1");
                     } else if let Some(ss) = app.active_server_state_mut() {
+                        let mut sorted: Vec<String> = ss.buffer_order.clone();
+                        sorted.sort_by(|a, b| {
+                            if a.is_empty() { return std::cmp::Ordering::Less; }
+                            if b.is_empty() { return std::cmp::Ordering::Greater; }
+                            a.to_lowercase().cmp(&b.to_lowercase())
+                        });
                         let idx = num - 1;
-                        if let Some(name) = ss.buffer_order.get(idx).cloned() {
+                        if let Some(name) = sorted.get(idx).cloned() {
                             ss.switch_buffer(&name);
                         } else {
                             app.system_message(&format!("No window #{}", num));

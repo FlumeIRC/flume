@@ -52,16 +52,13 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         a.to_lowercase().cmp(&b.to_lowercase())
     });
 
-    for buf_name in &sorted_buffers {
+    for (visual_idx, buf_name) in sorted_buffers.iter().enumerate() {
+        let idx = visual_idx + 1; // 1-indexed display number
         let display = if buf_name.is_empty() {
             "server"
         } else {
             buf_name.as_str()
         };
-        // Find the 1-based index in buffer_order (for /go <num>)
-        let idx = ss.buffer_order.iter().position(|b| b == *buf_name)
-            .map(|i| i + 1)
-            .unwrap_or(0);
         let is_active = **buf_name == ss.active_buffer;
         let buf = ss.buffers.get(buf_name.as_str());
         let unread = buf.map(|b| b.unread_count).unwrap_or(0);
