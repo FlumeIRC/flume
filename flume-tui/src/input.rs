@@ -1075,13 +1075,42 @@ async fn process_input(
                 handle_set_command(args, app);
             }
             "save" => {
+                // Save irc.toml
                 match flume_core::config::save_irc_config(&app.irc_config) {
                     Ok(()) => app.system_message(&format!(
                         "Saved {} network(s) to {}",
                         app.irc_config.networks.len(),
                         flume_core::config::irc_config_path().display()
                     )),
-                    Err(e) => app.system_message(&format!("Failed to save: {}", e)),
+                    Err(e) => app.system_message(&format!("Failed to save irc.toml: {}", e)),
+                }
+
+                // Save config.toml (update runtime state)
+                let config_path = flume_core::config::config_dir().join("config.toml");
+                let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
+                let mut config: toml::Table = toml::from_str(&existing).unwrap_or_default();
+
+                // Update ui section
+                let ui = config
+                    .entry("ui")
+                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                if let toml::Value::Table(ref mut t) = ui {
+                    t.insert("theme".to_string(), toml::Value::String(app.active_theme.clone()));
+                    t.insert("show_join_part".to_string(), toml::Value::Boolean(app.show_join_part));
+                    t.insert("show_hostmask_on_join".to_string(), toml::Value::Boolean(app.show_hostmask_on_join));
+                }
+
+                let _ = std::fs::create_dir_all(flume_core::config::config_dir());
+                match toml::to_string_pretty(&config) {
+                    Ok(toml_str) => {
+                        match std::fs::write(&config_path, &toml_str) {
+                            Ok(()) => app.system_message(&format!(
+                                "Saved config to {}", config_path.display()
+                            )),
+                            Err(e) => app.system_message(&format!("Failed to save config.toml: {}", e)),
+                        }
+                    }
+                    Err(e) => app.system_message(&format!("Failed to serialize config: {}", e)),
                 }
             }
             "url" | "urls" => {
