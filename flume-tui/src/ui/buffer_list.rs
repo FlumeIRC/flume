@@ -24,6 +24,21 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             .add_modifier(Modifier::BOLD),
     )));
 
+    // Global flume buffer — always first
+    if app.viewing_global {
+        lines.push(Line::from(Span::styled(
+            " flume",
+            Style::default()
+                .fg(theme.active)
+                .add_modifier(Modifier::BOLD),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            " flume",
+            Style::default().fg(theme.buffer_list_fg),
+        )));
+    }
+
     // Buffer list — sorted alphabetically, server buffer first
     let mut sorted_buffers: Vec<&String> = ss.buffer_order.iter().collect();
     sorted_buffers.sort_by(|a, b| {
