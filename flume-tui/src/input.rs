@@ -1133,7 +1133,11 @@ async fn process_input(
                     let themes = crate::theme::Theme::list_available();
                     app.system_message("Available themes:");
                     for name in &themes {
-                        app.system_message(&format!("  {}", name));
+                        if name == &app.active_theme {
+                            app.system_message(&format!("  {} *", name));
+                        } else {
+                            app.system_message(&format!("  {}", name));
+                        }
                     }
                     app.system_message("Usage: /theme <name> | /theme reload");
                 } else if args == "reload" {

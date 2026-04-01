@@ -322,6 +322,8 @@ pub struct App {
     pub connect_to: Option<String>,
     /// Theme switch request from /theme command.
     pub theme_switch: Option<String>,
+    /// Currently active theme name.
+    pub active_theme: String,
     /// Tab completion state.
     pub tab_state: Option<TabCompletionState>,
     /// Notification configuration.
@@ -398,6 +400,7 @@ impl App {
             irc_config: IrcConfig::default(),
             connect_to: None,
             theme_switch: None,
+            active_theme: String::new(),
             tab_state: None,
             notification_config,
             url_open_command,

@@ -181,6 +181,9 @@ pub struct NetworkEntry {
     pub reconnect_attempts: u32,
     #[serde(default = "default_reconnect_delay")]
     pub reconnect_delay_ms: u64,
+    /// Server password (IRC PASS command, sent on connect). Use ${secret} for vault.
+    #[serde(default)]
+    pub password: Option<String>,
     #[serde(default)]
     pub autoconnect: bool,
     #[serde(default)]
@@ -210,6 +213,7 @@ impl NetworkEntry {
             autojoin: Vec::new(),
             flood_delay_ms: default_flood_delay(),
             reconnect_attempts: default_reconnect_attempts(),
+            password: None,
             reconnect_delay_ms: default_reconnect_delay(),
             autoconnect: false,
             bouncer: BouncerType::None,
@@ -251,6 +255,7 @@ impl NetworkEntry {
             "flood_delay_ms" => self.flood_delay_ms = value.parse().map_err(|_| "invalid number")?,
             "reconnect_attempts" => self.reconnect_attempts = value.parse().map_err(|_| "invalid number")?,
             "reconnect_delay_ms" => self.reconnect_delay_ms = value.parse().map_err(|_| "invalid number")?,
+            "password" => self.password = Some(value.to_string()),
             "autoconnect" => self.autoconnect = value.parse().map_err(|_| "expected true or false")?,
             "bouncer" => {
                 self.bouncer = match value {
@@ -275,7 +280,7 @@ impl From<NetworkEntry> for ServerConfig {
                 address: entry.address,
                 port: entry.port,
                 tls: entry.tls,
-                password: None,
+                password: entry.password,
             },
             auth: AuthConfig {
                 method: entry.auth_method,
@@ -323,6 +328,7 @@ impl From<&ServerConfig> for NetworkEntry {
             autojoin: config.channels.autojoin.clone(),
             flood_delay_ms: config.advanced.flood_delay_ms,
             reconnect_attempts: config.advanced.reconnect_attempts,
+            password: config.server.password.clone(),
             reconnect_delay_ms: config.advanced.reconnect_delay_ms,
             autoconnect: false,
             bouncer: BouncerType::None,

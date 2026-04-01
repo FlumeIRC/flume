@@ -84,6 +84,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flume_config.ui.show_hostmask_on_join,
     );
     app.irc_config = irc_config;
+    app.active_theme = theme.name.clone();
 
     // Set up scripting engine
     let mut script_manager = match ScriptManager::new() {
@@ -421,6 +422,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         let path = flume_core::config::themes_dir().join(format!("{}.toml", name));
                         if path.exists() {
                             theme.switch_to(&name);
+                            app.active_theme = theme.name.clone();
                             app.system_message(&format!("Theme switched to '{}'", theme.name));
                         } else {
                             app.system_message(&format!(
