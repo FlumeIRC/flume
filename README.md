@@ -221,7 +221,31 @@ Use `/help` for the full list, or `/help <command>` for details on any command.
 | `/generate script <desc>` | AI-generate a script |
 | `/dcc list` | Show DCC transfers |
 | `/xdcc <bot> <pack#>` | Request XDCC pack |
+| `/snotice add ...` | Add server notice routing rule |
 | `/emoji <search>` | Search emoji shortcodes |
+
+## Custom Formats
+
+Every message format is configurable in `config.toml`:
+
+```toml
+[formats]
+message = "<${nick}> ${text}"
+join = "--> ${nick} (${userhost}) has joined ${channel}"
+part = "<-- ${nick} has left ${channel}${?message| (${message})}"
+quit = "<-- ${nick} has quit${?message| (${message})}"
+nick_change = "*** ${old_nick} is now known as ${new_nick}"
+```
+
+## Server Notice Routing (IRC Operators)
+
+Parse and route raw server notices with regex:
+
+```
+/snotice add --match "Client connecting: (\S+)" --format "[connect] ${1}" --buffer snotice-connections
+/snotice add --match "Oper-up" --suppress
+/snotice save
+```
 
 ## License
 
