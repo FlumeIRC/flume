@@ -1,8 +1,10 @@
+pub mod buffer_list;
 pub mod chat_buffer;
 pub mod input_line;
 pub mod nick_list;
 pub mod status_bar;
 pub mod title_bar;
+pub mod topic_bar;
 
 use std::collections::VecDeque;
 
@@ -17,68 +19,102 @@ use crate::split::SplitDirection;
 use crate::theme::Theme;
 
 pub fn render(frame: &mut Frame, app: &App, theme: &Theme) {
+    // Weechat-style layout:
+    //   topic_bar (1 line)
+    //   main area: [buffer_list | chat | nick_list]
+    //   status_bar (1 line)
+    //   input_line (1 line)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),  // title bar
-            Constraint::Min(1),    // main area (chat + optional nick list / split)
-            Constraint::Length(1),  // input line
+            Constraint::Length(1),  // topic bar
+            Constraint::Min(1),    // main area
             Constraint::Length(1),  // status bar
+            Constraint::Length(1),  // input line
         ])
         .split(frame.area());
 
-    title_bar::render(frame, chunks[0], app, theme);
+    topic_bar::render(frame, chunks[0], app, theme);
+
+    // Main area: buffer list (left) + chat (center) + nick list (right)
+    let show_nick_list = app
+        .active_server_state()
+        .map(|ss| ss.active_buffer.starts_with('#') && !ss.active_buf().nicks.is_empty())
+        .unwrap_or(false);
+
+    let show_buffer_list = app.active_server_state().is_some();
 
     if let Some(ref gen) = app.pending_generation {
-        // Show generation preview in split pane
-        let split_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
+        // Generation preview: buffer_list | chat | separator | preview
+        let main_constraints = if show_buffer_list {
+            vec![
+                Constraint::Length(20),
                 Constraint::Percentage(50),
                 Constraint::Length(1),
                 Constraint::Percentage(50),
-            ])
+            ]
+        } else {
+            vec![
+                Constraint::Percentage(50),
+                Constraint::Length(1),
+                Constraint::Percentage(50),
+                Constraint::Length(0),
+            ]
+        };
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(main_constraints)
             .split(chunks[1]);
 
-        // Left: normal chat
-        chat_buffer::render(frame, split_chunks[0], app, theme);
-
-        // Separator
-        render_separator(frame, split_chunks[1], SplitDirection::Vertical, theme);
-
-        // Right: generated content preview
-        render_generation_preview(frame, split_chunks[2], gen, theme);
+        if show_buffer_list {
+            buffer_list::render(frame, main_chunks[0], app, theme);
+            chat_buffer::render(frame, main_chunks[1], app, theme);
+            render_separator(frame, main_chunks[2], SplitDirection::Vertical, theme);
+            render_generation_preview(frame, main_chunks[3], gen, theme);
+        } else {
+            chat_buffer::render(frame, main_chunks[0], app, theme);
+            render_separator(frame, main_chunks[1], SplitDirection::Vertical, theme);
+            render_generation_preview(frame, main_chunks[2], gen, theme);
+        }
     } else if let Some(ref split) = app.split {
-        // Split mode: two chat panes, no nick list
+        // Split mode: buffer_list | chat1 | sep | chat2
         let direction = match split.direction {
             SplitDirection::Vertical => Direction::Horizontal,
             SplitDirection::Horizontal => Direction::Vertical,
         };
 
-        // Leave 1 char/line for separator
-        let split_chunks = Layout::default()
+        let mut constraints = Vec::new();
+        if show_buffer_list && direction == Direction::Horizontal {
+            constraints.push(Constraint::Length(20)); // buffer list
+        }
+        constraints.push(Constraint::Percentage(split.ratio));
+        constraints.push(Constraint::Length(1)); // separator
+        constraints.push(Constraint::Percentage(100 - split.ratio));
+
+        let main_chunks = Layout::default()
             .direction(direction)
-            .constraints([
-                Constraint::Percentage(split.ratio),
-                Constraint::Length(1),       // separator
-                Constraint::Percentage(100 - split.ratio),
-            ])
+            .constraints(constraints)
             .split(chunks[1]);
 
-        // Primary pane (active buffer)
-        chat_buffer::render(frame, split_chunks[0], app, theme);
+        let (chat1_idx, sep_idx, chat2_idx) = if show_buffer_list
+            && matches!(split.direction, SplitDirection::Vertical)
+        {
+            buffer_list::render(frame, main_chunks[0], app, theme);
+            (1, 2, 3)
+        } else {
+            (0, 1, 2)
+        };
 
-        // Separator
-        render_separator(frame, split_chunks[1], split.direction, theme);
+        chat_buffer::render(frame, main_chunks[chat1_idx], app, theme);
+        render_separator(frame, main_chunks[sep_idx], split.direction, theme);
 
-        // Secondary pane
         let empty = VecDeque::new();
         let messages = app.split_messages().unwrap_or(&empty);
         let scroll = app.split_scroll_offset();
         let search = app.split_search();
         chat_buffer::render_buffer(
             frame,
-            split_chunks[2],
+            main_chunks[chat2_idx],
             messages,
             scroll,
             search,
@@ -86,32 +122,56 @@ pub fn render(frame: &mut Frame, app: &App, theme: &Theme) {
             theme,
         );
     } else {
-        // Single buffer mode with optional nick list
-        let show_nick_list = app
-            .active_server_state()
-            .map(|ss| {
-                ss.active_buffer.starts_with('#') && !ss.active_buf().nicks.is_empty()
-            })
-            .unwrap_or(false);
-
+        // Normal mode: buffer_list | chat | nick_list
+        let mut constraints = Vec::new();
+        if show_buffer_list {
+            constraints.push(Constraint::Length(20)); // buffer list
+        }
+        constraints.push(Constraint::Min(1)); // chat
         if show_nick_list {
-            let main_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Min(1),        // chat buffer
-                    Constraint::Length(18),     // nick list
-                ])
-                .split(chunks[1]);
+            constraints.push(Constraint::Length(18)); // nick list
+        }
 
-            chat_buffer::render(frame, main_chunks[0], app, theme);
-            nick_list::render(frame, main_chunks[1], app, theme);
-        } else {
-            chat_buffer::render(frame, chunks[1], app, theme);
+        let main_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(constraints)
+            .split(chunks[1]);
+
+        let mut idx = 0;
+        if show_buffer_list {
+            buffer_list::render(frame, main_chunks[idx], app, theme);
+            idx += 1;
+        }
+        chat_buffer::render(frame, main_chunks[idx], app, theme);
+        idx += 1;
+        if show_nick_list {
+            nick_list::render(frame, main_chunks[idx], app, theme);
         }
     }
 
-    input_line::render(frame, chunks[2], app, theme);
-    status_bar::render(frame, chunks[3], app, theme);
+    status_bar::render(frame, chunks[2], app, theme);
+    input_line::render(frame, chunks[3], app, theme);
+}
+
+/// Render a separator line between split panes.
+fn render_separator(frame: &mut Frame, area: Rect, direction: SplitDirection, theme: &Theme) {
+    let sep_style = Style::default().fg(theme.status_bar_fg).bg(theme.status_bar_bg);
+
+    match direction {
+        SplitDirection::Vertical => {
+            let lines: Vec<Line> = (0..area.height)
+                .map(|_| Line::from(Span::styled("│", sep_style)))
+                .collect();
+            frame.render_widget(Paragraph::new(lines), area);
+        }
+        SplitDirection::Horizontal => {
+            let bar = "─".repeat(area.width as usize);
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(bar, sep_style))),
+                area,
+            );
+        }
+    }
 }
 
 /// Render a preview of generated content.
@@ -139,23 +199,20 @@ fn render_generation_preview(
         .fg(theme.status_bar_fg)
         .bg(theme.status_bar_bg);
 
-    // Split area into header, content, footer
     let preview_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),   // header
-            Constraint::Min(1),      // content
-            Constraint::Length(1),   // footer
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
         ])
         .split(area);
 
-    // Header
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(header, header_style))),
         preview_chunks[0],
     );
 
-    // Content — show code with line numbers
     let content_lines: Vec<Line> = gen
         .content
         .lines()
@@ -171,35 +228,10 @@ fn render_generation_preview(
         })
         .collect();
 
-    let paragraph = Paragraph::new(content_lines);
-    frame.render_widget(paragraph, preview_chunks[1]);
+    frame.render_widget(Paragraph::new(content_lines), preview_chunks[1]);
 
-    // Footer
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(footer, footer_style))),
         preview_chunks[2],
     );
-}
-
-/// Render a separator line between split panes.
-fn render_separator(frame: &mut Frame, area: Rect, direction: SplitDirection, theme: &Theme) {
-    let sep_style = Style::default().fg(theme.status_bar_fg).bg(theme.status_bar_bg);
-
-    match direction {
-        SplitDirection::Vertical => {
-            // Vertical line
-            let lines: Vec<Line> = (0..area.height)
-                .map(|_| Line::from(Span::styled("│", sep_style)))
-                .collect();
-            frame.render_widget(Paragraph::new(lines), area);
-        }
-        SplitDirection::Horizontal => {
-            // Horizontal line
-            let bar = "─".repeat(area.width as usize);
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(bar, sep_style))),
-                area,
-            );
-        }
-    }
 }

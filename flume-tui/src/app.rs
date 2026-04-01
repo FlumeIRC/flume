@@ -119,6 +119,10 @@ pub struct Buffer {
     pub nicks: Vec<ChannelNick>,
     /// Active search pattern (None = no search active).
     pub search: Option<String>,
+    /// Channel topic (set by RPL_TOPIC 332 and TOPIC commands).
+    pub topic: Option<String>,
+    /// Channel modes (set by RPL_CHANNELMODEIS 324 and MODE commands).
+    pub channel_modes: Option<String>,
 }
 
 impl Buffer {
@@ -130,6 +134,8 @@ impl Buffer {
             highlight_count: 0,
             nicks: Vec::new(),
             search: None,
+            topic: None,
+            channel_modes: None,
         }
     }
 
@@ -1009,6 +1015,9 @@ impl App {
                     }
                     Command::Topic { channel, topic } => {
                         let nick = message.prefix_nick().unwrap_or("???");
+                        if let Some(buf) = ss.buffers.get_mut(channel.as_str()) {
+                            buf.topic = topic.clone();
+                        }
                         let text = match topic {
                             Some(t) => format!("{} set topic of {} to: {}", nick, channel, t),
                             None => format!("{} cleared topic of {}", nick, channel),
@@ -1195,6 +1204,9 @@ impl App {
                             332 => {
                                 let channel = p(1);
                                 let topic = p(2);
+                                if let Some(buf) = ss.buffers.get_mut(&channel) {
+                                    buf.topic = Some(topic.clone());
+                                }
                                 ss.add_message(&channel, labeled_sys(format!("Topic: {}", topic)), scrollback);
                             }
                             333 => {
@@ -1219,6 +1231,9 @@ impl App {
                                 // RPL_CHANNELMODEIS: channel modes [params]
                                 let channel = p(1);
                                 let modes = params[2..].join(" ");
+                                if let Some(buf) = ss.buffers.get_mut(&channel) {
+                                    buf.channel_modes = Some(modes.clone());
+                                }
                                 ss.add_message(&channel,
                                     labeled_sys(format!("Channel modes: {}", modes)), scrollback);
                             }
