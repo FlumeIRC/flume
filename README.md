@@ -142,9 +142,9 @@ Interactive setup:
 This walks you through choosing a provider and storing your API key. Then:
 
 ```
-/generate script auto-respond when someone says hello in #general
-/generate theme dark blue with warm orange accents
-/generate layout monitoring setup with #ops on the left and #alerts on the right
+/generate script --name greeter auto-respond when someone says hello
+/generate theme --name midnight dark blue with warm orange accents
+/generate layout --name monitoring #ops on the left and #alerts on the right
 ```
 
 ## Scripting
