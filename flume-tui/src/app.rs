@@ -718,7 +718,25 @@ impl App {
                 ss.add_message("", msg, scrollback);
             }
             IrcEvent::StateChanged { state, .. } => {
-                self.servers.get_mut(&server_name).unwrap().connection_state = state.clone();
+                let ss = self.servers.get_mut(&server_name).unwrap();
+                ss.connection_state = state.clone();
+                // Show connection progress to the user
+                let status_text = match state {
+                    ConnectionState::Connecting => format!("Connecting to {}...", server_name),
+                    ConnectionState::Registering => format!("Registering on {}...", server_name),
+                    ConnectionState::Connected => format!("Connected to {}", server_name),
+                    ConnectionState::Disconnected => format!("Disconnected from {}", server_name),
+                };
+                ss.add_message(
+                    "",
+                    DisplayMessage {
+                        timestamp: chrono::Utc::now(),
+                        source: MessageSource::System,
+                        text: status_text,
+                        highlight: false,
+                    },
+                    self.scrollback_limit,
+                );
             }
             IrcEvent::Error { error, .. } => {
                 let msg = DisplayMessage {
@@ -1346,6 +1364,41 @@ impl App {
                             },
                             scrollback,
                         );
+                    }
+                    Command::Notice { target, text } => {
+                        let nick = message.prefix_nick().unwrap_or("");
+                        // Server notices (from server or no nick) go to server buffer
+                        // User notices go to the appropriate buffer
+                        if nick.is_empty() || nick.contains('.') || *target == "*" {
+                            // Server notice (nick is server hostname or target is *)
+                            ss.add_message(
+                                "",
+                                DisplayMessage {
+                                    timestamp,
+                                    source: MessageSource::Server,
+                                    text: format!("[notice] {}", text),
+                                    highlight: false,
+                                },
+                                scrollback,
+                            );
+                        } else {
+                            // User notice
+                            let buffer = if target.starts_with('#') {
+                                target.clone()
+                            } else {
+                                String::new()
+                            };
+                            ss.add_message(
+                                &buffer,
+                                DisplayMessage {
+                                    timestamp,
+                                    source: MessageSource::Server,
+                                    text: format!("[notice] <{}> {}", nick, text),
+                                    highlight: false,
+                                },
+                                scrollback,
+                            );
+                        }
                     }
                     _ => {}
                 }
