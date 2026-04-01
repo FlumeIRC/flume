@@ -9,7 +9,7 @@ class Flume < Formula
 
   def install
     system "cargo", "install", *std_cargo_args(path: "flume-tui")
-    bin.install "target/release/flume-tui" => "flume"
+    bin.install "target/release/flume"
     man1.install "doc/flume.1"
   end
 

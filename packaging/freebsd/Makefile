@@ -21,6 +21,6 @@ PLIST_FILES=	bin/flume \
 
 post-install:
 	${INSTALL_MAN} ${WRKSRC}/doc/flume.1 ${STAGEDIR}${PREFIX}/man/man1
-	${MV} ${STAGEDIR}${PREFIX}/bin/flume-tui ${STAGEDIR}${PREFIX}/bin/flume
+	
 
 .include <bsd.port.mk>

@@ -30,12 +30,6 @@ cd flume
 cargo install --path flume-tui
 ```
 
-The binary installs as `flume-tui`. You can alias it:
-
-```sh
-alias flume=flume-tui
-```
-
 ### With Python scripting support
 
 ```sh
@@ -70,7 +64,7 @@ Download from the [Releases](https://github.com/FlumeIRC/flume/releases) page.
 
 ```sh
 # Start Flume
-flume-tui
+flume
 
 # Add a network
 /server add libera irc.libera.chat 6697 -tls -autoconnect
