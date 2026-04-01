@@ -1237,6 +1237,9 @@ async fn process_input(
                     }
                 }
             }
+            "snotice" => {
+                handle_snotice_command(args, app);
+            }
             "generate" | "gen" => {
                 handle_generate_command(args, app);
             }
@@ -1641,6 +1644,7 @@ fn show_help(app: &mut App) {
     app.system_message("    /generate layout <desc>  — Generate a layout");
     app.system_message("    /generate accept/reject  — Save or discard generation");
     app.system_message("  Other:");
+    app.system_message("    /snotice add|list|rm|save — Manage server notice rules");
     app.system_message("    /set [key] [value]       — View or change settings");
     app.system_message("    /quote <raw line>        — Send raw IRC line");
     app.system_message("    /go <name or number>     — Jump to buffer/server");
@@ -1814,6 +1818,22 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("/search <pattern>");
             app.system_message("  Search the active buffer for a text pattern.");
             app.system_message("  Matching lines are highlighted. /search with no args clears.");
+        }
+        "snotice" => {
+            app.system_message("/snotice add|list|remove|save");
+            app.system_message("  Manage regex-based server notice routing rules.");
+            app.system_message("");
+            app.system_message("  /snotice list             — show all rules");
+            app.system_message("  /snotice add --match <regex> [options]");
+            app.system_message("    --format <fmt>          — format with ${1} ${2} capture groups");
+            app.system_message("    --buffer <name>         — route to a named buffer");
+            app.system_message("    --suppress              — drop the notice entirely");
+            app.system_message("  /snotice remove <number>  — remove a rule by number");
+            app.system_message("  /snotice save             — save rules to snotice.toml");
+            app.system_message("");
+            app.system_message("  Example:");
+            app.system_message("    /snotice add --match \"Client connecting: (\\S+)\" --format \"[connect] ${1}\" --buffer snotice-connections");
+            app.system_message("    /snotice add --match \"Oper-up\" --suppress");
         }
         "set" => {
             app.system_message("/set [section.key] [value]");
@@ -2252,6 +2272,138 @@ fn handle_generate_init_input(text: &str, step: u8, app: &mut App) {
         }
         _ => {
             app.generate_init_step = None;
+        }
+    }
+}
+
+fn handle_snotice_command(args: &str, app: &mut App) {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let subcmd = parts.first().copied().unwrap_or("");
+
+    match subcmd {
+        "list" | "ls" | "" => {
+            if app.snotice_configs.is_empty() {
+                app.system_message("No snotice rules configured");
+                app.system_message("Usage: /snotice add --match <regex> [--format <fmt>] [--buffer <name>] [--suppress]");
+            } else {
+                app.system_message("Snotice rules:");
+                let lines: Vec<String> = app.snotice_configs.iter().enumerate().map(|(i, rule)| {
+                    let mut desc = format!("  {}: match=\"{}\"", i + 1, rule.pattern);
+                    if let Some(ref fmt) = rule.format {
+                        desc.push_str(&format!(" format=\"{}\"", fmt));
+                    }
+                    if let Some(ref buf) = rule.buffer {
+                        desc.push_str(&format!(" buffer=\"{}\"", buf));
+                    }
+                    if rule.suppress {
+                        desc.push_str(" suppress");
+                    }
+                    desc
+                }).collect();
+                for line in &lines {
+                    app.system_message(line);
+                }
+            }
+        }
+        "add" => {
+            let rest = parts.get(1).copied().unwrap_or("");
+            let words: Vec<&str> = rest.split_whitespace().collect();
+
+            let mut pattern: Option<String> = None;
+            let mut format: Option<String> = None;
+            let mut buffer: Option<String> = None;
+            let mut suppress = false;
+
+            let mut i = 0;
+            while i < words.len() {
+                match words[i] {
+                    "--match" | "-m" => {
+                        i += 1;
+                        if i < words.len() {
+                            // Collect until next flag
+                            let mut p = words[i].to_string();
+                            while i + 1 < words.len() && !words[i + 1].starts_with("--") {
+                                i += 1;
+                                p.push(' ');
+                                p.push_str(words[i]);
+                            }
+                            pattern = Some(p);
+                        }
+                    }
+                    "--format" | "-f" => {
+                        i += 1;
+                        if i < words.len() {
+                            let mut f = words[i].to_string();
+                            while i + 1 < words.len() && !words[i + 1].starts_with("--") {
+                                i += 1;
+                                f.push(' ');
+                                f.push_str(words[i]);
+                            }
+                            format = Some(f);
+                        }
+                    }
+                    "--buffer" | "-b" => {
+                        i += 1;
+                        if i < words.len() {
+                            buffer = Some(words[i].to_string());
+                        }
+                    }
+                    "--suppress" | "-s" => {
+                        suppress = true;
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+
+            let Some(pat) = pattern else {
+                app.system_message("Usage: /snotice add --match <regex> [--format <fmt>] [--buffer <name>] [--suppress]");
+                return;
+            };
+
+            // Validate regex
+            if regex::Regex::new(&pat).is_err() {
+                app.system_message(&format!("Invalid regex: {}", pat));
+                return;
+            }
+
+            let rule = flume_core::config::formats::SnoticeRuleConfig {
+                pattern: pat.clone(),
+                format,
+                buffer,
+                suppress,
+            };
+            app.snotice_configs.push(rule);
+            app.snotice_rules = crate::app::compile_snotice_rules(&app.snotice_configs);
+            app.system_message(&format!("Snotice rule added: match=\"{}\"", pat));
+            app.system_message("Use /snotice save to persist");
+        }
+        "remove" | "rm" | "del" => {
+            let rest = parts.get(1).copied().unwrap_or("").trim();
+            if let Ok(idx) = rest.parse::<usize>() {
+                if idx >= 1 && idx <= app.snotice_configs.len() {
+                    let removed = app.snotice_configs.remove(idx - 1);
+                    app.snotice_rules = crate::app::compile_snotice_rules(&app.snotice_configs);
+                    app.system_message(&format!("Removed rule {}: match=\"{}\"", idx, removed.pattern));
+                } else {
+                    app.system_message(&format!("Invalid rule number. Use /snotice list (1-{})", app.snotice_configs.len()));
+                }
+            } else {
+                app.system_message("Usage: /snotice remove <number>");
+            }
+        }
+        "save" => {
+            match flume_core::config::save_snotice_rules(&app.snotice_configs) {
+                Ok(()) => app.system_message(&format!(
+                    "Saved {} rule(s) to {}",
+                    app.snotice_configs.len(),
+                    flume_core::config::snotice_config_path().display()
+                )),
+                Err(e) => app.system_message(&format!("Failed to save: {}", e)),
+            }
+        }
+        _ => {
+            app.system_message("Usage: /snotice add|list|remove|save");
         }
     }
 }

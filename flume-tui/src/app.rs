@@ -19,6 +19,21 @@ pub struct CompiledSnoticeRule {
     pub suppress: bool,
 }
 
+/// Compile snotice rule configs into regex-ready rules.
+pub fn compile_snotice_rules(configs: &[flume_core::config::formats::SnoticeRuleConfig]) -> Vec<CompiledSnoticeRule> {
+    configs
+        .iter()
+        .filter_map(|rule| {
+            regex::Regex::new(&rule.pattern).ok().map(|re| CompiledSnoticeRule {
+                regex: re,
+                format: rule.format.clone(),
+                buffer: rule.buffer.clone(),
+                suppress: rule.suppress,
+            })
+        })
+        .collect()
+}
+
 use flume_core::dcc::{DccTransfer, DccTransferState};
 
 use crate::split::{SplitDirection, SplitState};
@@ -353,6 +368,8 @@ pub struct App {
     pub formats: FormatsConfig,
     /// Compiled snotice regex rules.
     pub snotice_rules: Vec<CompiledSnoticeRule>,
+    /// Raw snotice rule configs (for add/remove/save).
+    pub snotice_configs: Vec<flume_core::config::formats::SnoticeRuleConfig>,
     /// Active keybinding mode.
     pub keybinding_mode: KeybindingMode,
     /// Vi sub-mode (Normal/Insert). Only used when keybinding_mode == Vi.
@@ -408,19 +425,10 @@ impl App {
         show_hostmask_on_join: bool,
         formats: FormatsConfig,
     ) -> Self {
-        // Compile snotice regex rules
-        let snotice_rules: Vec<CompiledSnoticeRule> = formats
-            .snotice
-            .iter()
-            .filter_map(|rule| {
-                regex::Regex::new(&rule.pattern).ok().map(|re| CompiledSnoticeRule {
-                    regex: re,
-                    format: rule.format.clone(),
-                    buffer: rule.buffer.clone(),
-                    suppress: rule.suppress,
-                })
-            })
-            .collect();
+        // Load snotice rules from file, merge with any in [formats] config
+        let mut snotice_configs = flume_core::config::load_snotice_rules();
+        snotice_configs.extend(formats.snotice.clone());
+        let snotice_rules = compile_snotice_rules(&snotice_configs);
         App {
             servers: HashMap::new(),
             active_server: None,
@@ -445,6 +453,7 @@ impl App {
             show_hostmask_on_join,
             formats,
             snotice_rules,
+            snotice_configs,
             keybinding_mode,
             vi_mode: ViMode::Insert,
             vi_pending_op: None,

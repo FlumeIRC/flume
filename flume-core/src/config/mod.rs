@@ -62,6 +62,46 @@ pub fn irc_config_path() -> PathBuf {
     config_dir().join("irc.toml")
 }
 
+/// Return the path to the snotice.toml file.
+pub fn snotice_config_path() -> PathBuf {
+    config_dir().join("snotice.toml")
+}
+
+/// Load snotice rules from snotice.toml.
+pub fn load_snotice_rules() -> Vec<formats::SnoticeRuleConfig> {
+    let path = snotice_config_path();
+    let contents = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+    #[derive(serde::Deserialize)]
+    struct SnoticeFile {
+        #[serde(default, rename = "rule")]
+        rules: Vec<formats::SnoticeRuleConfig>,
+    }
+    match toml::from_str::<SnoticeFile>(&contents) {
+        Ok(f) => f.rules,
+        Err(_) => Vec::new(),
+    }
+}
+
+/// Save snotice rules to snotice.toml.
+pub fn save_snotice_rules(rules: &[formats::SnoticeRuleConfig]) -> Result<(), ConfigError> {
+    #[derive(serde::Serialize)]
+    struct SnoticeFile<'a> {
+        #[serde(rename = "rule")]
+        rules: &'a [formats::SnoticeRuleConfig],
+    }
+    let path = snotice_config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let toml_str = toml::to_string_pretty(&SnoticeFile { rules })
+        .map_err(|e| ConfigError::Io(std::io::Error::other(e.to_string())))?;
+    std::fs::write(&path, toml_str)?;
+    Ok(())
+}
+
 fn dirs_home() -> Option<PathBuf> {
     directories::UserDirs::new().map(|d| d.home_dir().to_path_buf())
 }
