@@ -66,12 +66,15 @@ Download from the [Releases](https://github.com/FlumeIRC/flume/releases) page.
 # Start Flume
 flume
 
-# Add a network
-/server add libera irc.libera.chat 6697 -tls -autoconnect
-
-# Store your password securely
+# Add a network with credentials
 /secure init
-/secure set libera_pass your-password-here
+/secure set libera_pass your-sasl-password
+/server add libera irc.libera.chat 6697 -tls -autoconnect -username mynick -password ${libera_pass}
+
+# Or configure SASL auth
+/server set libera auth_method sasl
+/server set libera sasl_username mynick
+/server set libera sasl_password ${libera_pass}
 
 # Save and connect
 /save
