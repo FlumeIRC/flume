@@ -50,14 +50,33 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     };
 
     let prompt_len: usize = prompt_spans.iter().map(|s| s.width()).sum();
+    let available_width = (area.width as usize).saturating_sub(prompt_len);
+
+    // Calculate horizontal scroll offset to keep cursor visible
+    let cursor_in_text = app.cursor_pos;
+    let scroll_offset = if cursor_in_text >= available_width {
+        cursor_in_text - available_width + 1
+    } else {
+        0
+    };
+
+    // Slice the display text to the visible window
+    let visible_text = if scroll_offset < display_text.len() {
+        let end = (scroll_offset + available_width).min(display_text.len());
+        &display_text[scroll_offset..end]
+    } else {
+        ""
+    };
+
     let mut all_spans = prompt_spans;
-    all_spans.push(Span::raw(display_text));
+    all_spans.push(Span::raw(visible_text.to_string()));
 
     let line = Line::from(all_spans);
     let paragraph = Paragraph::new(line);
     frame.render_widget(paragraph, area);
 
-    let cursor_x = area.x + prompt_len as u16 + app.cursor_pos as u16;
+    // Position cursor relative to the visible window
+    let cursor_x = area.x + prompt_len as u16 + (cursor_in_text - scroll_offset) as u16;
     let cursor_y = area.y;
     frame.set_cursor_position((cursor_x.min(area.x + area.width - 1), cursor_y));
 }
