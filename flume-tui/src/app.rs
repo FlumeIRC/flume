@@ -261,6 +261,23 @@ impl ServerState {
         self.switch_buffer(&name);
     }
 
+    /// Remove a buffer and switch to an adjacent one.
+    pub fn remove_buffer(&mut self, name: &str) {
+        if let Some(pos) = self.buffer_order.iter().position(|b| b == name) {
+            self.buffers.remove(name);
+            self.buffer_order.remove(pos);
+            // If we were viewing this buffer, switch to another
+            if self.active_buffer == name {
+                let new_idx = if pos > 0 { pos - 1 } else { 0 };
+                if let Some(new_name) = self.buffer_order.get(new_idx).cloned() {
+                    self.switch_buffer(&new_name);
+                } else {
+                    self.active_buffer = String::new(); // server buffer
+                }
+            }
+        }
+    }
+
     /// Get total unread count across all non-active buffers.
     pub fn total_unread(&self) -> u32 {
         self.buffers
@@ -853,6 +870,7 @@ impl App {
                     }
                     Command::Part { channels, message: part_msg } => {
                         let nick = message.prefix_nick().unwrap_or("???");
+                        let is_self = nick == ss.nick;
                         for channel in channels {
                             // Remove nick from channel
                             if let Some(buf) = ss.buffers.get_mut(channel.as_str()) {
@@ -872,6 +890,10 @@ impl App {
                                 },
                                 scrollback,
                             );
+                            // Auto-close buffer when we part
+                            if is_self {
+                                ss.remove_buffer(channel);
+                            }
                         }
                     }
                     Command::Quit { message: quit_msg } => {
@@ -976,11 +998,77 @@ impl App {
                         );
                     }
                     Command::Numeric { code, params } => {
+                        let whois_msg = |label: &str, text: &str| DisplayMessage {
+                            timestamp,
+                            source: MessageSource::Server,
+                            text: format!("[{}] {}", label, text),
+                            highlight: false,
+                        };
                         match *code {
                             // RPL_UMODEIS (221) — our user modes
                             221 => {
                                 let modes = params.get(1).cloned().unwrap_or_default();
                                 ss.user_modes = modes;
+                            }
+                            // --- WHOIS responses ---
+                            // RPL_WHOISUSER (311): nick user host * :realname
+                            311 => {
+                                let nick = params.get(1).cloned().unwrap_or_default();
+                                let user = params.get(2).cloned().unwrap_or_default();
+                                let host = params.get(3).cloned().unwrap_or_default();
+                                let realname = params.get(5).cloned().unwrap_or_default();
+                                ss.add_message("", whois_msg("whois",
+                                    &format!("{} ({}@{}) — {}", nick, user, host, realname)), scrollback);
+                            }
+                            // RPL_WHOISSERVER (312): nick server :server info
+                            312 => {
+                                let server = params.get(2).cloned().unwrap_or_default();
+                                let info = params.get(3).cloned().unwrap_or_default();
+                                ss.add_message("", whois_msg("server",
+                                    &format!("{} — {}", server, info)), scrollback);
+                            }
+                            // RPL_WHOISOPERATOR (313): nick :is an IRC operator
+                            313 => {
+                                let text = params.get(2).cloned().unwrap_or_default();
+                                ss.add_message("", whois_msg("oper", &text), scrollback);
+                            }
+                            // RPL_WHOISIDLE (317): nick seconds signon :seconds idle, signon time
+                            317 => {
+                                let idle_secs: u64 = params.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+                                let idle_str = if idle_secs >= 3600 {
+                                    format!("{}h {}m", idle_secs / 3600, (idle_secs % 3600) / 60)
+                                } else if idle_secs >= 60 {
+                                    format!("{}m {}s", idle_secs / 60, idle_secs % 60)
+                                } else {
+                                    format!("{}s", idle_secs)
+                                };
+                                ss.add_message("", whois_msg("idle", &idle_str), scrollback);
+                            }
+                            // RPL_ENDOFWHOIS (318) — end marker, skip
+                            318 => {}
+                            // RPL_WHOISCHANNELS (319): nick :channels
+                            319 => {
+                                let channels = params.get(2).cloned().unwrap_or_default();
+                                ss.add_message("", whois_msg("channels", &channels), scrollback);
+                            }
+                            // RPL_WHOISACCOUNT (330): nick account :is logged in as
+                            330 => {
+                                let account = params.get(2).cloned().unwrap_or_default();
+                                ss.add_message("", whois_msg("account", &account), scrollback);
+                            }
+                            // RPL_AWAY (301): nick :away message
+                            301 => {
+                                let away_msg = params.get(2).cloned().unwrap_or_default();
+                                ss.add_message("", whois_msg("away", &away_msg), scrollback);
+                            }
+                            // RPL_WHOISHOST (378): nick :is connecting from ...
+                            378 => {
+                                let text = params.last().cloned().unwrap_or_default();
+                                ss.add_message("", whois_msg("host", &text), scrollback);
+                            }
+                            // RPL_WHOISSECURE (671): nick :is using a secure connection
+                            671 => {
+                                ss.add_message("", whois_msg("secure", "using TLS"), scrollback);
                             }
                             // RPL_TOPIC (332)
                             332 => {
@@ -999,7 +1087,6 @@ impl App {
                             }
                             // RPL_NAMREPLY (353) — nick list for a channel
                             353 => {
-                                // params: [our_nick, "=" or "@" or "*", #channel, "nick1 @nick2 +nick3 ..."]
                                 let channel = params.get(2).cloned().unwrap_or_default();
                                 let nicks_str = params.get(3).cloned().unwrap_or_default();
                                 ss.ensure_buffer(&channel);
@@ -1010,7 +1097,7 @@ impl App {
                                     }
                                 }
                             }
-                            // RPL_ENDOFNAMES (366) — end of nick list, nothing to do
+                            // RPL_ENDOFNAMES (366) — end of nick list
                             366 => {}
                             _ => {
                                 let text = params.last().cloned().unwrap_or_default();
