@@ -1013,24 +1013,31 @@ impl App {
                         if old_nick == our_nick {
                             ss.nick = nickname.clone();
                         }
-                        let msg = DisplayMessage {
-                            timestamp,
-                            source: MessageSource::System,
-                            text: format!("{} -> {}", old_nick, nickname),
-                            highlight: false,
-                        };
-                        // Rename nick in all channel buffers
-                        let buffer_names: Vec<String> = ss
+                        // Find channels where this nick is present
+                        let channels_with_nick: Vec<String> = ss
                             .buffers
-                            .keys()
-                            .filter(|k| k.starts_with('#'))
-                            .cloned()
+                            .iter()
+                            .filter(|(k, buf)| {
+                                k.starts_with('#') && buf.nicks.iter().any(|cn| cn.nick == old_nick)
+                            })
+                            .map(|(k, _)| k.clone())
                             .collect();
-                        for buf_name in &buffer_names {
+                        // Rename and notify only in those channels
+                        for buf_name in &channels_with_nick {
                             if let Some(buf) = ss.buffers.get_mut(buf_name.as_str()) {
                                 buf.rename_nick(old_nick, nickname);
                             }
-                            ss.add_message(buf_name, msg.clone(), scrollback);
+                        }
+                        if self.show_join_part && !channels_with_nick.is_empty() {
+                            let msg = DisplayMessage {
+                                timestamp,
+                                source: MessageSource::System,
+                                text: format!("*** {} is now known as {}", old_nick, nickname),
+                                highlight: false,
+                            };
+                            for buf_name in &channels_with_nick {
+                                ss.add_message(buf_name, msg.clone(), scrollback);
+                            }
                         }
                     }
                     Command::Topic { channel, topic } => {
