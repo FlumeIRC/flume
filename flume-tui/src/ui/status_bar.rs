@@ -47,22 +47,20 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             ));
         }
 
-        // [N users, X ops, Y voiced]
+        // [N users, X ops, Y halfops, Z voiced]
         if let Some(ss) = app.active_server_state() {
             let buf = ss.active_buf();
             if !buf.nicks.is_empty() {
                 let total = buf.nicks.len();
                 let ops = buf.nicks.iter().filter(|n| n.prefix.contains('@')).count();
-                let voiced = buf
-                    .nicks
-                    .iter()
-                    .filter(|n| n.prefix.contains('+') && !n.prefix.contains('@'))
-                    .count();
+                let halfops = buf.nicks.iter().filter(|n| n.prefix.contains('%') && !n.prefix.contains('@')).count();
+                let voiced = buf.nicks.iter().filter(|n| n.prefix.contains('+') && !n.prefix.contains('@') && !n.prefix.contains('%')).count();
                 spans.push(sep.clone());
-                spans.push(Span::styled(
-                    format!("[{} users, {} ops, {} voiced]", total, ops, voiced),
-                    fg,
-                ));
+                let mut parts = vec![format!("{} users", total)];
+                if ops > 0 { parts.push(format!("{} ops", ops)); }
+                if halfops > 0 { parts.push(format!("{} halfops", halfops)); }
+                if voiced > 0 { parts.push(format!("{} voiced", voiced)); }
+                spans.push(Span::styled(format!("[{}]", parts.join(", ")), fg));
             }
         }
     }
