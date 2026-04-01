@@ -2280,8 +2280,14 @@ fn handle_set_command(args: &str, app: &mut App) {
                 for (k, v) in t {
                     app.system_message(&format!("  {}.{} = {}", key, k, format_toml_value(v)));
                 }
+            } else if let Some(defaults) = section_defaults(key) {
+                // Section exists but has no custom settings — show defaults
+                app.system_message(&format!("[{}]: (all defaults)", key));
+                for (k, v) in defaults {
+                    app.system_message(&format!("  {}.{} = {} (default)", key, k, v));
+                }
             } else {
-                app.system_message(&format!("No section '{}'. Sections: general, ui, logging, notifications, ctcp, llm, dcc", key));
+                app.system_message(&format!("Unknown section '{}'. Sections: general, ui, logging, notifications, ctcp, llm, dcc", key));
             }
         } else {
             // Show a single key
@@ -2291,10 +2297,25 @@ fn handle_set_command(args: &str, app: &mut App) {
                 if let Some(v) = t.get(field) {
                     app.system_message(&format!("{} = {}", key, format_toml_value(v)));
                 } else {
-                    app.system_message(&format!("'{}' not set (using default)", key));
+                    // Check if it's a known default
+                    if let Some(defaults) = section_defaults(section) {
+                        if let Some((_, dv)) = defaults.iter().find(|(k, _)| *k == field) {
+                            app.system_message(&format!("{} = {} (default)", key, dv));
+                        } else {
+                            app.system_message(&format!("'{}' is not a known setting", key));
+                        }
+                    } else {
+                        app.system_message(&format!("'{}' not set (using default)", key));
+                    }
+                }
+            } else if let Some(defaults) = section_defaults(section) {
+                if let Some((_, dv)) = defaults.iter().find(|(k, _)| *k == field) {
+                    app.system_message(&format!("{} = {} (default)", key, dv));
+                } else {
+                    app.system_message(&format!("'{}' is not a known setting", key));
                 }
             } else {
-                app.system_message(&format!("No section '{}'", section));
+                app.system_message(&format!("Unknown section '{}'", section));
             }
         }
         return;
@@ -2385,6 +2406,65 @@ fn list_toml_table(table: &toml::Table, prefix: &str, app: &mut App) {
                 app.system_message(&format!("  {} = {}", full_key, format_toml_value(v)));
             }
         }
+    }
+}
+
+fn section_defaults(section: &str) -> Option<Vec<(&'static str, &'static str)>> {
+    match section {
+        "general" => Some(vec![
+            ("default_nick", "\"flume_user\""),
+            ("realname", "\"Flume User\""),
+            ("username", "\"flume\""),
+            ("quit_message", "\"Flume IRC\""),
+            ("timestamp_format", "\"%H:%M:%S\""),
+            ("scrollback_lines", "10000"),
+            ("url_open_command", "\"open\" (macOS) / \"xdg-open\" (Linux)"),
+        ]),
+        "ui" => Some(vec![
+            ("theme", "\"default\""),
+            ("show_server_tree", "true"),
+            ("show_nick_list", "true"),
+            ("server_tree_width", "20"),
+            ("nick_list_width", "18"),
+            ("input_history_size", "500"),
+            ("tick_rate_fps", "30"),
+            ("show_join_part", "true"),
+            ("show_hostmask_on_join", "true"),
+        ]),
+        "logging" => Some(vec![
+            ("enabled", "true"),
+            ("format", "\"plain\""),
+            ("rotate", "\"daily\""),
+        ]),
+        "notifications" => Some(vec![
+            ("highlight_bell", "true"),
+            ("highlight_words", "[]"),
+            ("notify_private", "true"),
+            ("notify_highlight", "true"),
+        ]),
+        "ctcp" => Some(vec![
+            ("version_reply", "\"Flume <version>\""),
+            ("respond_to_version", "true"),
+            ("respond_to_ping", "true"),
+            ("respond_to_time", "true"),
+            ("rate_limit", "3"),
+        ]),
+        "llm" => Some(vec![
+            ("provider", "\"anthropic\""),
+            ("api_key_secret", "\"flume_llm_key\""),
+            ("model", "\"claude-sonnet-4-20250514\""),
+            ("temperature", "0.3"),
+            ("max_tokens", "4096"),
+        ]),
+        "dcc" => Some(vec![
+            ("enabled", "false"),
+            ("auto_accept", "false"),
+            ("download_directory", "\"~/Downloads/flume\""),
+            ("port_range", "[1024, 65535]"),
+            ("passive", "true"),
+            ("max_transfer_size", "0"),
+        ]),
+        _ => None,
     }
 }
 
