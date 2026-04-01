@@ -108,28 +108,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Set up LLM client (if configured and vault has the key)
-    let llm_client: Option<std::sync::Arc<flume_core::llm::LlmClient>> = {
-        let secret_name = &flume_config.llm.api_key_secret;
-        let api_key = vault
-            .as_ref()
-            .and_then(|v| v.get(secret_name).map(|s| s.to_string()))
-            .or_else(|| std::env::var(secret_name.to_uppercase().replace(' ', "_")).ok());
-
-        match api_key {
-            Some(key) => {
-                tracing::info!("LLM client initialized (provider: {:?})", flume_config.llm.provider);
-                Some(std::sync::Arc::new(flume_core::llm::LlmClient::new(
-                    flume_config.llm.clone(),
-                    key,
-                )))
-            }
-            None => {
-                tracing::info!("LLM not configured (no API key in vault as '{}')", secret_name);
-                None
-            }
-        }
-    };
+    // LLM client — lazily initialized on first /generate use
+    let mut llm_client: Option<std::sync::Arc<flume_core::llm::LlmClient>> = None;
 
     // Channel for receiving LLM generation results
     let (gen_tx, mut gen_rx) = mpsc::channel::<Result<(GenerationKind, Option<String>, String, String), String>>(1);
@@ -438,6 +418,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Check if /generate was requested
                 if let Some(req) = app.generate_request.take() {
+                    // Lazy-init LLM client: re-read config and vault each time
+                    if llm_client.is_none() {
+                        let llm_config = config::load_config()
+                            .map(|c| c.llm)
+                            .unwrap_or_default();
+                        let secret_name = &llm_config.api_key_secret;
+                        let api_key = vault
+                            .as_ref()
+                            .and_then(|v| v.get(secret_name).map(|s| s.to_string()))
+                            .or_else(|| std::env::var(
+                                secret_name.to_uppercase().replace(' ', "_")
+                            ).ok());
+
+                        if let Some(key) = api_key {
+                            tracing::info!("LLM client initialized (provider: {:?})", llm_config.provider);
+                            llm_client = Some(std::sync::Arc::new(
+                                flume_core::llm::LlmClient::new(llm_config, key),
+                            ));
+                        }
+                    }
+
                     if let Some(ref client) = llm_client {
                         app.generating = true;
                         let client = std::sync::Arc::clone(client);
