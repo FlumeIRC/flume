@@ -22,7 +22,7 @@ Flume supports multi-server connections, a rich TUI with theming and split views
 ### From source (all platforms)
 
 ```sh
-git clone https://github.com/emilio/flume.git
+git clone https://github.com/FlumeIRC/flume.git
 cd flume
 cargo install --path flume-tui
 ```
@@ -61,7 +61,7 @@ pkg install flume
 
 ### Pre-built binaries
 
-Download from the [Releases](https://github.com/emilio/flume/releases) page.
+Download from the [Releases](https://github.com/FlumeIRC/flume/releases) page.
 
 ## Quick Start
 

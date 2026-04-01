@@ -4,14 +4,14 @@ CATEGORIES=	irc
 
 MAINTAINER=	emilio@flume.dev
 COMMENT=	Modern terminal IRC client with scripting and LLM support
-WWW=		https://github.com/emilio/flume
+WWW=		https://github.com/FlumeIRC/flume
 
 LICENSE=	BSD3CLAUSE
 LICENSE_FILE=	${WRKSRC}/LICENSE
 
 USES=		cargo
 USE_GITHUB=	yes
-GH_ACCOUNT=	emilio
+GH_ACCOUNT=	FlumeIRC
 
 CARGO_BUILD_ARGS=	-p flume-tui
 CARGO_INSTALL_PATH=	flume-tui
