@@ -1,4 +1,5 @@
 pub mod dcc;
+pub mod formats;
 pub mod general;
 pub mod keybindings;
 pub mod llm;

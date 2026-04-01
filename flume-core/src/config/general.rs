@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::dcc::DccConfig;
+use super::formats::FormatsConfig;
 use super::keybindings::KeybindingsConfig;
 use super::llm::LlmConfig;
 
@@ -21,6 +22,8 @@ pub struct FlumeConfig {
     pub llm: LlmConfig,
     #[serde(default)]
     pub dcc: DccConfig,
+    #[serde(default)]
+    pub formats: FormatsConfig,
 }
 
 impl Default for FlumeConfig {
@@ -33,6 +36,7 @@ impl Default for FlumeConfig {
             ctcp: CtcpConfig::default(),
             llm: LlmConfig::default(),
             dcc: DccConfig::default(),
+            formats: FormatsConfig::default(),
         }
     }
 }

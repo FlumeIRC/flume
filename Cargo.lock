@@ -603,6 +603,7 @@ dependencies = [
  "mlua",
  "pyo3",
  "rand 0.8.5",
+ "regex",
  "reqwest",
  "rustls",
  "serde",

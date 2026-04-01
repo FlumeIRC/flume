@@ -4,6 +4,7 @@ pub mod connection;
 pub mod dcc;
 pub mod emoji;
 pub mod event;
+pub mod format;
 pub mod llm;
 pub mod logging;
 pub mod scripting;
