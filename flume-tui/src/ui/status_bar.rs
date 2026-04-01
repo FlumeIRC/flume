@@ -13,6 +13,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
 
     let mut spans = Vec::new();
 
+    // Time of day (left side)
+    let time_str = chrono::Local::now().format("%H:%M").to_string();
+    spans.push(Span::styled(format!(" {}", time_str), fg));
+
     // [nick(+modes)]
     let modes = app
         .active_server_state()
@@ -133,16 +137,6 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             Style::default().fg(theme.unread),
         ));
     }
-
-    // Time of day (right-aligned)
-    let time_str = chrono::Local::now().format("%H:%M").to_string();
-    // Calculate how much space we've used
-    let used: usize = spans.iter().map(|s| s.width()).sum();
-    let remaining = (area.width as usize).saturating_sub(used + time_str.len() + 1);
-    if remaining > 0 {
-        spans.push(Span::raw(" ".repeat(remaining)));
-    }
-    spans.push(Span::styled(time_str, fg));
 
     let bar = Paragraph::new(Line::from(spans)).style(Style::default().bg(theme.status_bar_bg));
     frame.render_widget(bar, area);
