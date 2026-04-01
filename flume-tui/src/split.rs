@@ -47,9 +47,9 @@ fn default_ratio() -> u16 {
     50
 }
 
-/// Return the layouts directory (~/.config/flume/layouts/).
+/// Return the layouts directory (~/.local/share/flume/layouts/).
 pub fn layouts_dir() -> PathBuf {
-    flume_core::config::config_dir().join("layouts")
+    flume_core::config::data_dir().join("layouts")
 }
 
 /// Save a layout profile to disk.

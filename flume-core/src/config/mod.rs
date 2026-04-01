@@ -51,9 +51,9 @@ pub fn vault_path() -> PathBuf {
     data_dir().join("vault.toml")
 }
 
-/// Return the themes directory.
+/// Return the themes directory (~/.local/share/flume/themes/).
 pub fn themes_dir() -> PathBuf {
-    config_dir().join("themes")
+    data_dir().join("themes")
 }
 
 /// Return the path to the irc.toml file (network/server definitions).

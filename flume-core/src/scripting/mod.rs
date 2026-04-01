@@ -237,32 +237,40 @@ impl ScriptManager {
         &self.scripts
     }
 
-    /// Load all scripts from the autoload directory (.lua and .py).
+    /// Load all scripts from lua/autoload and python/autoload directories.
     pub fn load_autoload(&mut self) -> Vec<(String, Result<(), mlua::Error>)> {
-        let dir = scripts_autoload_dir();
         let mut results = Vec::new();
 
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            return results;
-        };
+        // Scan both autoload directories
+        let dirs = [
+            (lua_autoload_dir(), "lua"),
+            (python_autoload_dir(), "py"),
+        ];
 
-        let mut paths: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok())
-            .filter(|e| {
-                let ext = e.path().extension().and_then(|x| x.to_str()).unwrap_or("").to_string();
-                ext == "lua" || ext == "py"
-            })
-            .map(|e| e.path())
-            .collect();
-        paths.sort();
+        for (dir, ext) in &dirs {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                continue;
+            };
 
-        for path in paths {
-            let name = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let result = self.load_script(&path);
-            results.push((name, result));
+            let mut paths: Vec<PathBuf> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.path()
+                        .extension()
+                        .is_some_and(|x| x == *ext)
+                })
+                .map(|e| e.path())
+                .collect();
+            paths.sort();
+
+            for path in paths {
+                let name = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let result = self.load_script(&path);
+                results.push((name, result));
+            }
         }
 
         results
@@ -341,14 +349,19 @@ impl ScriptManager {
     }
 }
 
-/// Scripts directory.
+/// Scripts base directory (~/.local/share/flume/scripts/).
 pub fn scripts_dir() -> PathBuf {
-    crate::config::config_dir().join("scripts")
+    crate::config::data_dir().join("scripts")
 }
 
-/// Autoload scripts directory.
-pub fn scripts_autoload_dir() -> PathBuf {
-    scripts_dir().join("autoload")
+/// Lua autoload directory (~/.local/share/flume/scripts/lua/autoload/).
+pub fn lua_autoload_dir() -> PathBuf {
+    scripts_dir().join("lua").join("autoload")
+}
+
+/// Python autoload directory (~/.local/share/flume/scripts/python/autoload/).
+pub fn python_autoload_dir() -> PathBuf {
+    scripts_dir().join("python").join("autoload")
 }
 
 /// Available (not auto-loaded) scripts directory.
@@ -356,9 +369,14 @@ pub fn scripts_available_dir() -> PathBuf {
     scripts_dir().join("available")
 }
 
-/// Script data directory (for persistent storage).
+/// Generated scripts directory (from /generate script).
+pub fn scripts_generated_dir() -> PathBuf {
+    scripts_dir().join("generated")
+}
+
+/// Script data directory (for persistent config per script).
 pub fn script_data_dir(script_name: &str) -> PathBuf {
-    crate::config::data_dir().join("scripts").join(script_name)
+    scripts_dir().join("data").join(script_name)
 }
 
 #[cfg(test)]

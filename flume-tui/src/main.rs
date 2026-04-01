@@ -680,7 +680,7 @@ fn handle_script_command(args: &str, mgr: &mut ScriptManager, app: &mut app::App
             if let Some(gen) = app.pending_generation.take() {
                 match gen.kind {
                     app::GenerationKind::Script => {
-                        let dir = flume_core::scripting::scripts_dir().join("generated");
+                        let dir = flume_core::scripting::scripts_generated_dir();
                         let _ = std::fs::create_dir_all(&dir);
                         let path = dir.join(&gen.name);
                         match std::fs::write(&path, &gen.content) {
@@ -783,13 +783,19 @@ fn handle_script_command(args: &str, mgr: &mut ScriptManager, app: &mut app::App
             let path = if rest.contains('/') || rest.contains('.') {
                 std::path::PathBuf::from(rest)
             } else {
-                // Look in scripts directories
-                let autoload = flume_core::scripting::scripts_autoload_dir().join(format!("{}.lua", rest));
-                if autoload.exists() {
-                    autoload
-                } else {
-                    flume_core::scripting::scripts_available_dir().join(format!("{}.lua", rest))
-                }
+                // Search: lua/autoload, python/autoload, available, generated
+                let candidates = [
+                    flume_core::scripting::lua_autoload_dir().join(format!("{}.lua", rest)),
+                    flume_core::scripting::python_autoload_dir().join(format!("{}.py", rest)),
+                    flume_core::scripting::scripts_available_dir().join(format!("{}.lua", rest)),
+                    flume_core::scripting::scripts_available_dir().join(format!("{}.py", rest)),
+                    flume_core::scripting::scripts_generated_dir().join(format!("{}.lua", rest)),
+                    flume_core::scripting::scripts_generated_dir().join(format!("{}.py", rest)),
+                ];
+                candidates.into_iter().find(|p| p.exists()).unwrap_or_else(|| {
+                    // Default to lua autoload path (will error on load)
+                    flume_core::scripting::lua_autoload_dir().join(format!("{}.lua", rest))
+                })
             };
             match mgr.load_script(&path) {
                 Ok(()) => app.system_message(&format!("Script '{}' loaded", rest)),

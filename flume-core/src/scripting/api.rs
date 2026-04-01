@@ -307,7 +307,7 @@ fn register_config_api(lua: &Lua, flume: &Table, state: State) -> LuaResult<()> 
             if script_name.is_empty() {
                 return Ok(Value::Nil);
             }
-            let path = super::scripts_dir().join(format!("{}.toml", script_name));
+            let path = super::script_data_dir(&script_name).join("config.toml");
             let contents = std::fs::read_to_string(&path).unwrap_or_default();
             let table: toml::Table = toml::from_str(&contents).unwrap_or_default();
             match table.get(&key) {
@@ -331,7 +331,7 @@ fn register_config_api(lua: &Lua, flume: &Table, state: State) -> LuaResult<()> 
             if script_name.is_empty() {
                 return Ok(());
             }
-            let path = super::scripts_dir().join(format!("{}.toml", script_name));
+            let path = super::script_data_dir(&script_name).join("config.toml");
             let contents = std::fs::read_to_string(&path).unwrap_or_default();
             let mut table: toml::Table = toml::from_str(&contents).unwrap_or_default();
 
