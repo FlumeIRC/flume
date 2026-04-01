@@ -810,6 +810,24 @@ impl App {
                                 );
                                 return notifications;
                             }
+                            // Non-ACTION CTCP — display as system message
+                            let ctcp_cmd = inner.split(' ').next().unwrap_or(inner);
+                            let ctcp_params = inner.strip_prefix(ctcp_cmd).unwrap_or("").trim();
+                            ss.add_message(
+                                "",
+                                DisplayMessage {
+                                    timestamp,
+                                    source: MessageSource::Server,
+                                    text: if ctcp_params.is_empty() {
+                                        format!("[ctcp] {} from {}", ctcp_cmd, nick)
+                                    } else {
+                                        format!("[ctcp] {} from {}: {}", ctcp_cmd, nick, ctcp_params)
+                                    },
+                                    highlight: false,
+                                },
+                                scrollback,
+                            );
+                            return notifications;
                         }
 
                         let source = if is_own {
@@ -969,7 +987,7 @@ impl App {
                         let msg = DisplayMessage {
                             timestamp,
                             source: MessageSource::System,
-                            text: format!("{} is now known as {}", old_nick, nickname),
+                            text: format!("{} -> {}", old_nick, nickname),
                             highlight: false,
                         };
                         // Rename nick in all channel buffers
@@ -1010,8 +1028,8 @@ impl App {
                             buf.remove_nick(user);
                         }
                         let text = match reason {
-                            Some(r) => format!("{} kicked {} from {} ({})", nick, user, channel, r),
-                            None => format!("{} kicked {} from {}", nick, user, channel),
+                            Some(r) => format!("{} was kicked from {} by {} ({})", user, channel, nick, r),
+                            None => format!("{} was kicked from {} by {}", user, channel, nick),
                         };
                         ss.add_message(
                             channel,
@@ -1380,7 +1398,11 @@ impl App {
                             DisplayMessage {
                                 timestamp,
                                 source: MessageSource::System,
-                                text: format!("{} sets mode {} {} {}", nick, target, mode_str, param_str),
+                                text: if param_str.is_empty() {
+                                    format!("mode/{} [{}] by {}", target, mode_str, nick)
+                                } else {
+                                    format!("mode/{} [{} {}] by {}", target, mode_str, param_str, nick)
+                                },
                                 highlight: false,
                             },
                             scrollback,

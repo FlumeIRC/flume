@@ -403,6 +403,16 @@ impl PyRuntime {
         self.state.lock().unwrap().custom_commands.contains_key(name)
     }
 
+    pub fn command_help(&self, name: &str) -> Option<String> {
+        self.state
+            .lock()
+            .unwrap()
+            .custom_commands
+            .get(name)
+            .map(|(_, _, help)| help.clone())
+            .filter(|h| !h.is_empty())
+    }
+
     pub fn custom_command_names(&self) -> Vec<String> {
         self.state
             .lock()

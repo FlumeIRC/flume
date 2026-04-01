@@ -915,7 +915,11 @@ async fn process_input(
                 }
             }
             "help" | "h" => {
-                show_help(app);
+                if args.is_empty() {
+                    show_help(app);
+                } else {
+                    show_help_topic(args.trim_start_matches('/'), app);
+                }
             }
             "keys" | "keybindings" => {
                 show_keybindings(app);
@@ -947,6 +951,49 @@ async fn process_input(
                             // Try as "server" alias for ""
                             if args == "server" {
                                 ss.switch_buffer("");
+                            }
+                        }
+                    }
+                }
+            }
+            "go" => {
+                if args.is_empty() {
+                    app.system_message("Usage: /go <name or number>");
+                } else if let Ok(num) = args.parse::<usize>() {
+                    // Jump by window number (1-indexed)
+                    if num == 0 {
+                        app.system_message("Window numbers start at 1");
+                    } else if let Some(ss) = app.active_server_state_mut() {
+                        let idx = num - 1;
+                        if let Some(name) = ss.buffer_order.get(idx).cloned() {
+                            ss.switch_buffer(&name);
+                        } else {
+                            app.system_message(&format!("No window #{}", num));
+                        }
+                    }
+                } else {
+                    // Jump by name — try exact match first, then substring
+                    let target = args.to_lowercase();
+                    if let Some(ss) = app.active_server_state_mut() {
+                        // Exact match
+                        if ss.buffers.contains_key(args) {
+                            ss.switch_buffer(args);
+                        } else if args == "server" {
+                            ss.switch_buffer("");
+                        } else {
+                            // Substring match
+                            let found = ss.buffer_order.iter()
+                                .find(|b| b.to_lowercase().contains(&target))
+                                .cloned();
+                            if let Some(name) = found {
+                                ss.switch_buffer(&name);
+                            } else {
+                                // Try as server name
+                                if app.servers.contains_key(args) {
+                                    app.switch_server(args);
+                                } else {
+                                    app.system_message(&format!("No buffer or server matching '{}'", args));
+                                }
                             }
                         }
                     }
@@ -1452,8 +1499,168 @@ fn show_help(app: &mut App) {
     app.system_message("    /generate accept/reject  — Save or discard generation");
     app.system_message("  Other:");
     app.system_message("    /quote <raw line>        — Send raw IRC line");
+    app.system_message("    /go <name or number>     — Jump to buffer/server");
     app.system_message("    /keys                    — Show keybinding info");
-    app.system_message("    /help                    — Show this help");
+    app.system_message("    /help [command]          — Show help (or help on a command)");
+}
+
+fn show_help_topic(topic: &str, app: &mut App) {
+    match topic {
+        "join" => {
+            app.system_message("/join <channel> [key]");
+            app.system_message("  Join an IRC channel. Optionally provide a key for +k channels.");
+            app.system_message("  Example: /join #rust");
+            app.system_message("  Example: /join #secret mykey");
+        }
+        "part" | "leave" => {
+            app.system_message("/part [channel] [message]");
+            app.system_message("  Leave a channel. Defaults to the active channel.");
+            app.system_message("  The buffer is automatically closed when you part.");
+            app.system_message("  Example: /part #rust Goodbye!");
+        }
+        "msg" | "query" => {
+            app.system_message("/msg <target> <text>");
+            app.system_message("  Send a private message to a user or channel.");
+            app.system_message("  Example: /msg alice Hello there!");
+        }
+        "me" => {
+            app.system_message("/me <text>");
+            app.system_message("  Send an action message (/me dances).");
+        }
+        "nick" => {
+            app.system_message("/nick <newnick>");
+            app.system_message("  Change your nickname on the current server.");
+        }
+        "topic" => {
+            app.system_message("/topic [channel] [text]");
+            app.system_message("  View or set the channel topic.");
+            app.system_message("  With no args: shows current topic.");
+            app.system_message("  With text: sets the topic (requires permissions).");
+        }
+        "buffer" | "buf" | "b" => {
+            app.system_message("/buffer [name]");
+            app.system_message("  With no args: list all buffers with their numbers.");
+            app.system_message("  With name: switch to that buffer.");
+            app.system_message("  Use 'server' to switch to the server buffer.");
+        }
+        "go" => {
+            app.system_message("/go <name or number>");
+            app.system_message("  Jump to a buffer by number (1-indexed) or name.");
+            app.system_message("  Supports partial/substring matching on names.");
+            app.system_message("  Also matches server names for cross-server switching.");
+            app.system_message("  Example: /go 3        — jump to window 3");
+            app.system_message("  Example: /go #rust    — jump to #rust");
+            app.system_message("  Example: /go rust     — fuzzy match #rust");
+        }
+        "switch" => {
+            app.system_message("/switch <server>");
+            app.system_message("  Switch to a different connected server.");
+        }
+        "split" => {
+            app.system_message("/split v|h <buffer>");
+            app.system_message("  Split the view vertically (v) or horizontally (h).");
+            app.system_message("  Shows two buffers side-by-side or top-bottom.");
+            app.system_message("  Use server/buffer for cross-server splits.");
+            app.system_message("  Example: /split v #linux");
+        }
+        "unsplit" => {
+            app.system_message("/unsplit");
+            app.system_message("  Close the split view and return to single buffer.");
+        }
+        "focus" => {
+            app.system_message("/focus");
+            app.system_message("  Swap keyboard focus between split panes. Also: Alt+Tab.");
+        }
+        "layout" => {
+            app.system_message("/layout save|load|list|delete <name>");
+            app.system_message("  Manage saved split layouts.");
+            app.system_message("  save <name>   — save current split as a named layout");
+            app.system_message("  load <name>   — restore a saved layout");
+            app.system_message("  list          — list saved layouts");
+            app.system_message("  delete <name> — delete a saved layout");
+        }
+        "script" => {
+            app.system_message("/script load|unload|reload|list [name]");
+            app.system_message("  Manage Lua and Python scripts.");
+            app.system_message("  load <name|path> — load a script (by name or file path)");
+            app.system_message("  unload <name>    — unload a loaded script");
+            app.system_message("  reload <name>    — reload a script from disk");
+            app.system_message("  list             — list loaded scripts and commands");
+        }
+        "generate" | "gen" => {
+            app.system_message("/generate script|theme|layout <description>");
+            app.system_message("  Use an LLM to generate content from a description.");
+            app.system_message("  Requires API key: /secure set flume_llm_key <key>");
+            app.system_message("  script [--lua|--python] <desc> — generate a script");
+            app.system_message("  theme <desc>                   — generate a theme");
+            app.system_message("  layout <desc>                  — generate a layout");
+            app.system_message("  accept                         — save and load result");
+            app.system_message("  reject                         — discard result");
+        }
+        "dcc" => {
+            app.system_message("/dcc list|accept|reject|send|chat|close [args]");
+            app.system_message("  DCC file transfer and chat commands.");
+            app.system_message("  list          — show all DCC transfers");
+            app.system_message("  accept [id]   — accept pending DCC offer");
+            app.system_message("  reject [id]   — reject pending DCC offer");
+            app.system_message("  send <nick> <file> — send a file to a user");
+            app.system_message("  chat <nick>   — start a DCC chat session");
+            app.system_message("  close <id>    — close a transfer or chat");
+        }
+        "xdcc" => {
+            app.system_message("/xdcc <bot> <pack#|list|cancel>");
+            app.system_message("  Request files from XDCC bots.");
+            app.system_message("  /xdcc bot 42     — request pack #42");
+            app.system_message("  /xdcc bot list   — request pack list");
+            app.system_message("  /xdcc bot cancel — cancel transfer");
+        }
+        "server" => {
+            app.system_message("/server add|remove|list|set|connect|switch [args]");
+            app.system_message("  Manage IRC network configurations.");
+            app.system_message("  add <name> <addr> [port] [-tls|-notls] [-autoconnect]");
+            app.system_message("  remove <name>    — remove a network");
+            app.system_message("  list             — list configured networks");
+            app.system_message("  set <n> <k> <v>  — set a network field");
+            app.system_message("  connect <name>   — connect to a network");
+        }
+        "secure" | "vault" => {
+            app.system_message("/secure init|set|del|list|unlock|passphrase");
+            app.system_message("  Manage the encrypted secrets vault.");
+            app.system_message("  init             — create a new vault");
+            app.system_message("  set <name> <val> — store a secret");
+            app.system_message("  del <name>       — delete a secret");
+            app.system_message("  list             — list secret names");
+            app.system_message("  unlock           — unlock the vault");
+            app.system_message("  passphrase       — change vault passphrase");
+        }
+        "whois" => {
+            app.system_message("/whois <nick>");
+            app.system_message("  Query detailed information about a user.");
+            app.system_message("  Shows nick, user@host, realname, channels, server, idle time.");
+        }
+        "keys" | "keybindings" => {
+            app.system_message("/keys");
+            app.system_message("  Show all keybindings for the active mode (Emacs or Vi).");
+            app.system_message("  Set mode in config.toml: [ui.keybindings] mode = \"vi\"");
+        }
+        "theme" => {
+            app.system_message("/theme [name|reload]");
+            app.system_message("  Switch themes or reload the current theme.");
+            app.system_message("  /theme             — list available themes");
+            app.system_message("  /theme <name>      — switch to a theme");
+            app.system_message("  /theme reload      — hot-reload current theme");
+        }
+        "search" | "grep" | "find" => {
+            app.system_message("/search <pattern>");
+            app.system_message("  Search the active buffer for a text pattern.");
+            app.system_message("  Matching lines are highlighted. /search with no args clears.");
+        }
+        _ => {
+            // Check if it's a script-registered command
+            app.script_command = Some(format!("_help {}", topic));
+            app.system_message(&format!("No help for '{}'. Try /help for the full list.", topic));
+        }
+    }
 }
 
 fn show_keybindings(app: &mut App) {
@@ -1822,6 +2029,21 @@ fn handle_generate_command(args: &str, app: &mut App) {
     let subcmd = parts.first().copied().unwrap_or("");
 
     match subcmd {
+        "init" | "setup" => {
+            app.system_message("LLM Generation Setup:");
+            app.system_message("  1. Choose your provider in config.toml:");
+            app.system_message("     [llm]");
+            app.system_message("     provider = \"anthropic\"  # or \"openai\"");
+            app.system_message("     model = \"claude-sonnet-4-20250514\"");
+            app.system_message("");
+            app.system_message("  2. Store your API key in the vault:");
+            app.system_message("     /secure init              (if vault not created)");
+            app.system_message("     /secure set flume_llm_key YOUR_API_KEY");
+            app.system_message("");
+            app.system_message("  3. Try it out:");
+            app.system_message("     /generate script greet users who join my channel");
+            app.system_message("     /generate theme dark mode with blue accents");
+        }
         "accept" => {
             if app.pending_generation.is_some() {
                 // Signal main loop to save and load the generation
@@ -1900,7 +2122,8 @@ fn handle_generate_command(args: &str, app: &mut App) {
             app.system_message("Generating layout...");
         }
         "" => {
-            app.system_message("Usage: /generate script|theme|layout <description>");
+            app.system_message("Usage: /generate init|script|theme|layout <description>");
+            app.system_message("  /generate init    — setup instructions for LLM");
             app.system_message("  /generate script [--lua|--python] <what you want>");
             app.system_message("  /generate theme <describe the look>");
             app.system_message("  /generate layout <describe the split>");
@@ -1908,7 +2131,7 @@ fn handle_generate_command(args: &str, app: &mut App) {
             app.system_message("  /generate reject  — discard pending generation");
         }
         _ => {
-            app.system_message("Usage: /generate script|theme|layout <description>");
+            app.system_message("Usage: /generate init|script|theme|layout <description>");
         }
     }
 }

@@ -318,6 +318,19 @@ impl ScriptManager {
         false
     }
 
+    pub fn command_help(&self, name: &str) -> Option<String> {
+        if let Some(h) = self.lua.command_help(name) {
+            return Some(h);
+        }
+        #[cfg(feature = "python")]
+        if let Some(ref py) = self.py {
+            if let Some(h) = py.command_help(name) {
+                return Some(h);
+            }
+        }
+        None
+    }
+
     pub fn custom_command_names(&self) -> Vec<String> {
         let mut names = self.lua.custom_command_names();
         #[cfg(feature = "python")]

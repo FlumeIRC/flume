@@ -478,11 +478,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }
                         });
                     } else {
-                        app.system_message("LLM not configured. Store your API key with:");
-                        app.system_message(&format!(
-                            "  /secure set {} <your-api-key>",
-                            flume_config.llm.api_key_secret
-                        ));
+                        app.system_message("LLM not configured. Run /generate init for setup instructions.");
                     }
                 }
 
@@ -726,6 +722,15 @@ fn handle_script_command(args: &str, mgr: &mut ScriptManager, app: &mut app::App
                 }
             }
             return;
+        }
+        // Internal: show help for a script command
+        "_help" => {
+            let cmd_name = rest.trim();
+            if let Some(help) = mgr.command_help(cmd_name) {
+                app.system_message(&format!("/{} — {}", cmd_name, help));
+            } else if mgr.has_command(cmd_name) {
+                app.system_message(&format!("/{} — script command (no help text)", cmd_name));
+            }
         }
         // Internal: try executing as a script-registered custom command
         "_exec" => {

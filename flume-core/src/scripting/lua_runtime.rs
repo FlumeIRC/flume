@@ -145,6 +145,17 @@ impl LuaRuntime {
         self.state.lock().unwrap().custom_commands.contains_key(name)
     }
 
+    /// Get the help text for a custom command.
+    pub fn command_help(&self, name: &str) -> Option<String> {
+        self.state
+            .lock()
+            .unwrap()
+            .custom_commands
+            .get(name)
+            .map(|(_, _, help)| help.clone())
+            .filter(|h| !h.is_empty())
+    }
+
     /// Get all custom command names.
     pub fn custom_command_names(&self) -> Vec<String> {
         self.state
