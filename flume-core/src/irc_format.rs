@@ -183,9 +183,44 @@ pub fn strip_formatting(text: &str) -> String {
     result
 }
 
+/// Map a color name to its mIRC color code.
+pub fn color_name_to_code(name: &str) -> Option<u8> {
+    match name.to_lowercase().as_str() {
+        "white" => Some(0),
+        "black" => Some(1),
+        "blue" | "navy" => Some(2),
+        "green" => Some(3),
+        "red" => Some(4),
+        "brown" | "maroon" => Some(5),
+        "purple" | "magenta" => Some(6),
+        "orange" => Some(7),
+        "yellow" => Some(8),
+        "lime" | "lightgreen" => Some(9),
+        "cyan" | "teal" => Some(10),
+        "aqua" | "lightcyan" => Some(11),
+        "lightblue" | "royal" => Some(12),
+        "pink" | "lightpurple" | "fuchsia" => Some(13),
+        "grey" | "gray" => Some(14),
+        "lightgrey" | "lightgray" | "silver" => Some(15),
+        _ => None,
+    }
+}
+
+/// List all named colors for /colors command.
+pub fn color_names() -> Vec<(&'static str, u8)> {
+    vec![
+        ("white", 0), ("black", 1), ("blue", 2), ("green", 3),
+        ("red", 4), ("brown", 5), ("purple", 6), ("orange", 7),
+        ("yellow", 8), ("lime", 9), ("cyan", 10), ("aqua", 11),
+        ("lightblue", 12), ("pink", 13), ("grey", 14), ("silver", 15),
+    ]
+}
+
 /// Convert user-friendly format shortcuts to IRC control codes.
 /// %B = bold, %I = italic, %U = underline, %R = reverse, %O = reset
-/// %C<fg>[,<bg>] = color (e.g., %C4 = red, %C4,1 = red on black)
+/// %C<fg>[,<bg>] = color by number or name
+///   %C4 = red, %C4,1 = red on black
+///   %Cred = red, %Cred,black = red on black
 pub fn apply_input_shortcuts(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
@@ -201,18 +236,36 @@ pub fn apply_input_shortcuts(text: &str) -> String {
                 'R' | 'r' => { result.push('\x16'); i += 2; }
                 'O' | 'o' => { result.push('\x0f'); i += 2; }
                 'C' | 'c' => {
-                    result.push('\x03');
                     i += 2;
-                    // Copy through digits and optional comma+digits
-                    while i < len && chars[i].is_ascii_digit() { result.push(chars[i]); i += 1; }
-                    if i < len && chars[i] == ',' {
-                        result.push(',');
-                        i += 1;
+                    // Try named color first
+                    let remaining: String = chars[i..].iter().collect();
+                    if let Some((fg_code, consumed)) = try_parse_color_name(&remaining) {
+                        result.push('\x03');
+                        result.push_str(&fg_code.to_string());
+                        i += consumed;
+                        // Check for ,bg
+                        if i < len && chars[i] == ',' {
+                            i += 1;
+                            let remaining: String = chars[i..].iter().collect();
+                            if let Some((bg_code, consumed)) = try_parse_color_name(&remaining) {
+                                result.push(',');
+                                result.push_str(&bg_code.to_string());
+                                i += consumed;
+                            }
+                        }
+                    } else {
+                        // Numeric color
+                        result.push('\x03');
                         while i < len && chars[i].is_ascii_digit() { result.push(chars[i]); i += 1; }
+                        if i < len && chars[i] == ',' {
+                            result.push(',');
+                            i += 1;
+                            while i < len && chars[i].is_ascii_digit() { result.push(chars[i]); i += 1; }
+                        }
                     }
                 }
-                '%' => { result.push('%'); i += 2; } // escaped %%
-                _ => { result.push('%'); i += 1; } // not a shortcut
+                '%' => { result.push('%'); i += 2; }
+                _ => { result.push('%'); i += 1; }
             }
         } else {
             result.push(chars[i]);
@@ -220,6 +273,31 @@ pub fn apply_input_shortcuts(text: &str) -> String {
         }
     }
     result
+}
+
+/// Try to parse a color name at the start of a string. Returns (code, chars_consumed).
+fn try_parse_color_name(s: &str) -> Option<(u8, usize)> {
+    // Try longest names first
+    for &(name, code) in &[
+        ("lightgreen", 9u8), ("lightcyan", 11), ("lightblue", 12),
+        ("lightpurple", 13), ("lightgrey", 14), ("lightgray", 14),
+        ("magenta", 6), ("maroon", 5), ("fuchsia", 13),
+        ("orange", 7), ("yellow", 8), ("purple", 6),
+        ("silver", 15), ("brown", 5), ("green", 3),
+        ("white", 0), ("black", 1), ("blue", 2), ("navy", 2),
+        ("aqua", 11), ("cyan", 10), ("teal", 10), ("lime", 9),
+        ("pink", 13), ("grey", 14), ("gray", 14), ("red", 4),
+        ("royal", 12),
+    ] {
+        if s.to_lowercase().starts_with(name) {
+            // Make sure next char isn't alphanumeric (word boundary)
+            let next = s.chars().nth(name.len());
+            if next.is_none() || !next.unwrap().is_alphanumeric() {
+                return Some((code, name.len()));
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -272,6 +350,21 @@ mod tests {
         assert_eq!(apply_input_shortcuts("%C4red%O"), "\x034red\x0f");
         assert_eq!(apply_input_shortcuts("%C4,1red on black"), "\x034,1red on black");
         assert_eq!(apply_input_shortcuts("100%%"), "100%");
+    }
+
+    #[test]
+    fn named_color_shortcuts() {
+        assert_eq!(apply_input_shortcuts("%Cred hello%O"), "\x034 hello\x0f");
+        assert_eq!(apply_input_shortcuts("%Cblue,white text"), "\x032,0 text");
+        assert_eq!(apply_input_shortcuts("%Cgreen ok"), "\x033 ok");
+    }
+
+    #[test]
+    fn color_name_lookup() {
+        assert_eq!(color_name_to_code("red"), Some(4));
+        assert_eq!(color_name_to_code("RED"), Some(4));
+        assert_eq!(color_name_to_code("blue"), Some(2));
+        assert_eq!(color_name_to_code("notacolor"), None);
     }
 
     #[test]

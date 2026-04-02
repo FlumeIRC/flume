@@ -1255,6 +1255,72 @@ async fn process_input(
                 // Delegate to main loop which owns the ScriptManager
                 app.script_command = Some(args.to_string());
             }
+            "color" | "colour" => {
+                // /color <name> <text> — send text in a color
+                let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                if parts.len() < 2 {
+                    app.system_message("Usage: /color <name> <text>");
+                    app.system_message("  /color red Hello world!");
+                    app.system_message("  /color blue,white Blue on white");
+                    app.system_message("  See /colors for available color names");
+                    return;
+                }
+                let color_spec = parts[0];
+                let text = parts[1];
+                // Parse fg[,bg]
+                let color_parts: Vec<&str> = color_spec.splitn(2, ',').collect();
+                let fg = flume_core::irc_format::color_name_to_code(color_parts[0])
+                    .or_else(|| color_parts[0].parse::<u8>().ok());
+                let bg = color_parts.get(1)
+                    .and_then(|b| flume_core::irc_format::color_name_to_code(b)
+                        .or_else(|| b.parse::<u8>().ok()));
+
+                if let Some(fg_code) = fg {
+                    let colored = if let Some(bg_code) = bg {
+                        format!("\x03{},{}{}\x0f", fg_code, bg_code, text)
+                    } else {
+                        format!("\x03{}{}\x0f", fg_code, text)
+                    };
+                    // Send as if the user typed it
+                    let target = app.active_target().map(|s| s.to_string());
+                    if let Some(ref target) = target {
+                        send_cmd(app, UserCommand::SendMessage {
+                            target: target.clone(),
+                            text: colored.clone(),
+                        }).await;
+                        if let Some(ss) = app.active_server_state_mut() {
+                            ss.recent_own_messages.push_back((colored.clone(), chrono::Utc::now()));
+                        }
+                        let nick = app.active_nick().to_string();
+                        let scrollback = app.scrollback_limit;
+                        if let Some(ss) = app.active_server_state_mut() {
+                            ss.add_message(target, DisplayMessage {
+                                timestamp: chrono::Utc::now(),
+                                source: MessageSource::Own(nick),
+                                text: colored,
+                                highlight: false,
+                            }, scrollback);
+                        }
+                    }
+                } else {
+                    app.system_message(&format!("Unknown color: {}. See /colors", color_parts[0]));
+                }
+            }
+            "colors" | "colours" => {
+                app.system_message("Available colors:");
+                let colors = flume_core::irc_format::color_names();
+                let line: String = colors.iter()
+                    .map(|(name, code)| format!("  \x03{}{}\x0f({})", code, name, code))
+                    .collect::<Vec<_>>()
+                    .join("  ");
+                app.system_message(&line);
+                app.system_message("");
+                app.system_message("Usage:");
+                app.system_message("  /color red Hello!          — send in red");
+                app.system_message("  /color blue,white text     — blue on white");
+                app.system_message("  %Cred inline %O normal     — inline formatting");
+                app.system_message("  %B bold %I italic %U underline %O reset");
+            }
             "emoji" => {
                 if args.is_empty() {
                     app.system_message(&format!(
