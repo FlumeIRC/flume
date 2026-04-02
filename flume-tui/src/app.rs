@@ -926,6 +926,11 @@ impl App {
                             return notifications;
                         }
 
+                        // Skip our own echoed messages — we already added them locally
+                        if is_own && ss.has_echo_message {
+                            return notifications;
+                        }
+
                         let source = if is_own {
                             MessageSource::Own(nick.to_string())
                         } else {

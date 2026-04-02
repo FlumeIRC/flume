@@ -595,20 +595,45 @@ async fn process_input(
                 send_cmd(app, UserCommand::Quit(msg)).await;
                 app.should_quit = true;
             }
+            "umode" => {
+                if args.is_empty() {
+                    // Show current user modes
+                    let modes = app.active_server_state()
+                        .map(|ss| ss.user_modes.clone())
+                        .unwrap_or_default();
+                    if modes.is_empty() {
+                        app.system_message("No user modes set");
+                    } else {
+                        app.system_message(&format!("User modes: {}", modes));
+                    }
+                } else {
+                    // Set user modes: /umode +i or /umode -w
+                    let nick = app.active_nick().to_string();
+                    send_cmd(app, UserCommand::RawLine(format!("MODE {} {}", nick, args))).await;
+                }
+            }
             "disconnect" => {
-                // Disconnect the active server (or named server)
                 let server_name = if args.is_empty() {
                     app.active_server.clone()
                 } else {
                     Some(args.to_string())
                 };
                 if let Some(ref name) = server_name {
+                    // Send QUIT to server
                     if let Some(ss) = app.servers.get(name) {
                         if let Some(tx) = &ss.command_tx {
                             let _ = tx.send(UserCommand::Quit(None)).await;
                         }
                     }
-                    app.system_message_to(name, "Disconnecting...");
+                    let msg = format!("Disconnected from {}", name);
+                    // Remove server and its buffers
+                    app.servers.remove(name);
+                    app.server_order.retain(|s| s != name);
+                    // Switch to next server if available
+                    if app.active_server.as_deref() == Some(name) {
+                        app.active_server = app.server_order.first().cloned();
+                    }
+                    app.system_message(&msg);
                 } else {
                     app.system_message("No active server");
                 }
@@ -624,23 +649,21 @@ async fn process_input(
                         target: target.clone(),
                         text: msg_text.clone(),
                     }).await;
-                    let has_echo = app.active_server_state().map(|ss| ss.has_echo_message).unwrap_or(false);
-                    if !has_echo {
-                        let nick = app.active_nick().to_string();
-                        let scrollback = app.scrollback_limit;
-                        if let Some(ss) = app.active_server_state_mut() {
-                            ss.ensure_buffer(&target);
-                            ss.add_message(
-                                &target,
-                                DisplayMessage {
-                                    timestamp: chrono::Utc::now(),
-                                    source: MessageSource::Own(nick),
-                                    text: msg_text,
-                                    highlight: false,
-                                },
-                                scrollback,
-                            );
-                        }
+                    // Always show locally
+                    let nick = app.active_nick().to_string();
+                    let scrollback = app.scrollback_limit;
+                    if let Some(ss) = app.active_server_state_mut() {
+                        ss.ensure_buffer(&target);
+                        ss.add_message(
+                            &target,
+                            DisplayMessage {
+                                timestamp: chrono::Utc::now(),
+                                source: MessageSource::Own(nick),
+                                text: msg_text,
+                                highlight: false,
+                            },
+                            scrollback,
+                        );
                     }
                 }
             }
@@ -1277,23 +1300,20 @@ async fn process_input(
                 target: target.clone(),
                 text: text.to_string(),
             }).await;
-            // Only add locally if server doesn't echo our messages back
-            let has_echo = app.active_server_state().map(|ss| ss.has_echo_message).unwrap_or(false);
-            if !has_echo {
-                let nick = app.active_nick().to_string();
-                let scrollback = app.scrollback_limit;
-                if let Some(ss) = app.active_server_state_mut() {
-                    ss.add_message(
-                        target,
-                        DisplayMessage {
-                            timestamp: chrono::Utc::now(),
-                            source: MessageSource::Own(nick),
-                            text: text.to_string(),
-                            highlight: false,
-                        },
-                        scrollback,
-                    );
-                }
+            // Always show our own message locally
+            let nick = app.active_nick().to_string();
+            let scrollback = app.scrollback_limit;
+            if let Some(ss) = app.active_server_state_mut() {
+                ss.add_message(
+                    target,
+                    DisplayMessage {
+                        timestamp: chrono::Utc::now(),
+                        source: MessageSource::Own(nick),
+                        text: text.to_string(),
+                        highlight: false,
+                    },
+                    scrollback,
+                );
             }
         } else {
             app.system_message("No target set. Use /join <channel> or /buffer <name>");
@@ -1809,6 +1829,20 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("/whois <nick>");
             app.system_message("  Query detailed information about a user.");
             app.system_message("  Shows nick, user@host, realname, channels, server, idle time.");
+        }
+        "umode" => {
+            app.system_message("/umode [modes]");
+            app.system_message("  View or set your user modes.");
+            app.system_message("  /umode           — show current modes");
+            app.system_message("  /umode +i        — set invisible");
+            app.system_message("  /umode -w        — unset wallops");
+            app.system_message("  /umode +iwx      — set multiple modes");
+        }
+        "disconnect" => {
+            app.system_message("/disconnect [server]");
+            app.system_message("  Disconnect from a server and remove it from the session.");
+            app.system_message("  With no args: disconnects the active server.");
+            app.system_message("  Switches to the next connected server if available.");
         }
         "keys" | "keybindings" => {
             app.system_message("/keys");
