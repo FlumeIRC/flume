@@ -750,13 +750,18 @@ fn spawn_connection(
         ss.command_tx = Some(handle.command_tx);
     }
 
-    // Bridge: forward broadcast events into the collector
+    // Bridge: forward server events into the collector.
+    // Drains all available events per wakeup to minimize latency.
     let collector_tx = event_collector_tx.clone();
     let mut event_rx = handle.event_rx;
     tokio::spawn(async move {
-        while let Some(event) = event_rx.recv().await {
-            if collector_tx.send(event).is_err() {
-                break;
+        loop {
+            // Wait for at least one event
+            let Some(event) = event_rx.recv().await else { break };
+            if collector_tx.send(event).is_err() { break; }
+            // Drain any additional queued events without waiting
+            while let Ok(event) = event_rx.try_recv() {
+                if collector_tx.send(event).is_err() { return; }
             }
         }
     });
