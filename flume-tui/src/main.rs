@@ -868,6 +868,82 @@ fn handle_script_command(args: &str, mgr: &mut ScriptManager, app: &mut app::App
                 Err(e) => app.system_message(&format!("Failed to reload script: {}", e)),
             }
         }
+        "autoload" => {
+            if rest.is_empty() {
+                app.system_message("Usage: /script autoload <name or path>");
+                return;
+            }
+            // Find the script — check loaded scripts first, then search dirs
+            let script_path = mgr.list_scripts().iter()
+                .find(|s| s.name == rest)
+                .map(|s| s.path.clone())
+                .or_else(|| {
+                    let candidates = [
+                        flume_core::scripting::scripts_available_dir().join(format!("{}.lua", rest)),
+                        flume_core::scripting::scripts_available_dir().join(format!("{}.py", rest)),
+                        flume_core::scripting::scripts_generated_dir().join(format!("{}.lua", rest)),
+                        flume_core::scripting::scripts_generated_dir().join(format!("{}.py", rest)),
+                    ];
+                    candidates.into_iter().find(|p| p.exists())
+                })
+                .or_else(|| {
+                    let p = std::path::PathBuf::from(rest);
+                    if p.exists() { Some(p) } else { None }
+                });
+
+            let Some(source) = script_path else {
+                app.system_message(&format!("Script '{}' not found", rest));
+                return;
+            };
+
+            let ext = source.extension().and_then(|e| e.to_str()).unwrap_or("lua");
+            let autoload_dir = match ext {
+                "py" => flume_core::scripting::python_autoload_dir(),
+                _ => flume_core::scripting::lua_autoload_dir(),
+            };
+            let _ = std::fs::create_dir_all(&autoload_dir);
+            let link_name = source.file_name().unwrap_or_default();
+            let link_path = autoload_dir.join(link_name);
+
+            if link_path.exists() {
+                app.system_message(&format!("Already in autoload: {}", link_path.display()));
+                return;
+            }
+
+            // Create symlink
+            #[cfg(unix)]
+            match std::os::unix::fs::symlink(&source, &link_path) {
+                Ok(()) => app.system_message(&format!(
+                    "Autoload enabled: {} -> {}", link_path.display(), source.display()
+                )),
+                Err(e) => app.system_message(&format!("Failed to create symlink: {}", e)),
+            }
+            #[cfg(not(unix))]
+            match std::fs::copy(&source, &link_path) {
+                Ok(_) => app.system_message(&format!("Autoload enabled: copied to {}", link_path.display())),
+                Err(e) => app.system_message(&format!("Failed to copy: {}", e)),
+            }
+        }
+        "noautoload" => {
+            if rest.is_empty() {
+                app.system_message("Usage: /script noautoload <name>");
+                return;
+            }
+            // Check both lua and python autoload dirs
+            let candidates = [
+                flume_core::scripting::lua_autoload_dir().join(format!("{}.lua", rest)),
+                flume_core::scripting::python_autoload_dir().join(format!("{}.py", rest)),
+            ];
+            let removed = candidates.iter().find(|p| p.exists());
+            if let Some(path) = removed {
+                match std::fs::remove_file(path) {
+                    Ok(()) => app.system_message(&format!("Autoload disabled: removed {}", path.display())),
+                    Err(e) => app.system_message(&format!("Failed to remove: {}", e)),
+                }
+            } else {
+                app.system_message(&format!("'{}' not found in autoload directories", rest));
+            }
+        }
         "list" | "ls" | "" => {
             let scripts = mgr.list_scripts();
             if scripts.is_empty() {

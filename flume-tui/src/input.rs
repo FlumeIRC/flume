@@ -1773,12 +1773,18 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("  delete <name> — delete a saved layout");
         }
         "script" => {
-            app.system_message("/script load|unload|reload|list [name]");
+            app.system_message("/script load|unload|reload|autoload|noautoload|list [name]");
             app.system_message("  Manage Lua and Python scripts.");
-            app.system_message("  load <name|path> — load a script (by name or file path)");
-            app.system_message("  unload <name>    — unload a loaded script");
-            app.system_message("  reload <name>    — reload a script from disk");
-            app.system_message("  list             — list loaded scripts and commands");
+            app.system_message("  load <name|path>     — load a script");
+            app.system_message("  unload <name>        — unload a loaded script");
+            app.system_message("  reload <name>        — reload a script from disk");
+            app.system_message("  autoload <name>      — symlink script into autoload dir");
+            app.system_message("  noautoload <name>    — remove from autoload dir");
+            app.system_message("  list                 — list loaded scripts and commands");
+            app.system_message("");
+            app.system_message("  Autoload directories:");
+            app.system_message(&format!("    Lua:    {}", flume_core::scripting::lua_autoload_dir().display()));
+            app.system_message(&format!("    Python: {}", flume_core::scripting::python_autoload_dir().display()));
         }
         "generate" | "gen" => {
             app.system_message("/generate init|script|theme|layout|accept|reject");
