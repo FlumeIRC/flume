@@ -1,5 +1,5 @@
 PORTNAME=	flume
-DISTVERSION=	1.2.2
+DISTVERSION=	1.2.3
 CATEGORIES=	irc
 
 MAINTAINER=	emilio@flumeirc.io

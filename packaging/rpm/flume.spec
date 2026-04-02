@@ -1,5 +1,5 @@
 Name:           flume
-Version:        1.2.2
+Version:        1.2.3
 Release:        1%{?dist}
 Summary:        Modern terminal IRC client
 License:        Apache-2.0
@@ -36,6 +36,12 @@ install -Dm644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %{_mandir}/man1/flume.1*
 
 %changelog
+* Wed Apr 02 2026 Emilio A. Escobar <emilio@flumeirc.io> - 1.2.3-1
+- User-defined color combinations (%rainbow%, %alert%, cycle combos)
+- /color combo add|list|remove|test commands
+- Fix snotice rules never matching (duplicate Notice handler)
+- Updated /help for all new commands
+
 * Wed Apr 02 2026 Emilio A. Escobar <emilio@flumeirc.io> - 1.2.2-1
 - IRC color and formatting support (mIRC colors, 256-color, named colors)
 - /color and /colors commands for colored messages

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag (e.g. v1.2.2)'
+        description: 'Version tag (e.g. v1.2.3)'
         required: true
   workflow_call:
     inputs:
