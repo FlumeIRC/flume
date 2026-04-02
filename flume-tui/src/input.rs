@@ -1781,14 +1781,23 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("  list             — list loaded scripts and commands");
         }
         "generate" | "gen" => {
-            app.system_message("/generate script|theme|layout <description>");
+            app.system_message("/generate init|script|theme|layout|accept|reject");
             app.system_message("  Use an LLM to generate content from a description.");
-            app.system_message("  Requires API key: /secure set flume_llm_key <key>");
-            app.system_message("  script [--lua|--python] <desc> — generate a script");
-            app.system_message("  theme <desc>                   — generate a theme");
-            app.system_message("  layout <desc>                  — generate a layout");
-            app.system_message("  accept                         — save and load result");
-            app.system_message("  reject                         — discard result");
+            app.system_message("");
+            app.system_message("  /generate init                 — interactive setup (provider + API key)");
+            app.system_message("  /generate script [options] <desc>");
+            app.system_message("    --name <name>                — set the filename");
+            app.system_message("    --lua / --python             — choose language (default: lua)");
+            app.system_message("  /generate theme [--name <name>] <desc>");
+            app.system_message("  /generate layout [--name <name>] <desc>");
+            app.system_message("  /generate accept               — save and load result");
+            app.system_message("  /generate reject               — discard result");
+            app.system_message("");
+            app.system_message("  Examples:");
+            app.system_message("    /generate script --name greeter greet users who join");
+            app.system_message("    /generate script --python --name urlbot log URLs");
+            app.system_message("    /generate theme --name midnight dark blue with orange");
+            app.system_message("    /generate layout --name monitor #ops left #alerts right");
         }
         "dcc" => {
             app.system_message("/dcc list|accept|reject|send|chat|close [args]");
