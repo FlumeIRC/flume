@@ -192,7 +192,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Event collector: all server connections forward events here
-    let (event_collector_tx, mut event_collector_rx) = mpsc::channel::<IrcEvent>(1024);
+    let (event_collector_tx, mut event_collector_rx) = mpsc::unbounded_channel::<IrcEvent>();
 
     // Track which servers we've sent autojoin for
     let mut autojoin_sent: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -720,7 +720,7 @@ fn spawn_connection(
     name: &str,
     flume_config: &flume_core::config::general::FlumeConfig,
     vault: &Option<Vault>,
-    event_collector_tx: &mpsc::Sender<IrcEvent>,
+    event_collector_tx: &mpsc::UnboundedSender<IrcEvent>,
     app: &mut app::App,
 ) {
     let server_config = match config::load_server_config(name) {
@@ -755,7 +755,7 @@ fn spawn_connection(
     let mut event_rx = handle.event_rx;
     tokio::spawn(async move {
         while let Some(event) = event_rx.recv().await {
-            if collector_tx.send(event).await.is_err() {
+            if collector_tx.send(event).is_err() {
                 break;
             }
         }
