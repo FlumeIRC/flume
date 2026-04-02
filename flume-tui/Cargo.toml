@@ -8,6 +8,10 @@ license.workspace = true
 name = "flume"
 path = "src/main.rs"
 
+[features]
+default = []
+python = ["flume-core/python"]
+
 [dependencies]
 flume-core = { path = "../flume-core" }
 tokio = { workspace = true }

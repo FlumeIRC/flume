@@ -148,9 +148,15 @@ impl ScriptManager {
                         .map_err(|e| mlua::Error::runtime(e.to_string()))?;
                 } else {
                     return Err(mlua::Error::runtime(
-                        "Python scripting not available",
+                        "Python scripting not available. Rebuild with: cargo install --path flume-tui --features python",
                     ));
                 }
+            }
+            #[cfg(not(feature = "python"))]
+            "py" => {
+                return Err(mlua::Error::runtime(
+                    "Python scripting not enabled. Rebuild with: cargo install --path flume-tui --features python",
+                ));
             }
             _ => {
                 self.lua.exec_script(&name, &source)?;
