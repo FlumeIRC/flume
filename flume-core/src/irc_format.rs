@@ -221,7 +221,13 @@ pub fn color_names() -> Vec<(&'static str, u8)> {
 /// %C<fg>[,<bg>] = color by number or name
 ///   %C4 = red, %C4,1 = red on black
 ///   %Cred = red, %Cred,black = red on black
-pub fn apply_input_shortcuts(text: &str) -> String {
+/// %<combo>% = user-defined combo (static or cycle)
+///
+/// If no combos are needed, pass an empty map.
+pub fn apply_input_shortcuts(
+    text: &str,
+    combos: &std::collections::HashMap<String, crate::config::combos::ComboDefinition>,
+) -> String {
     let mut result = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
     let len = chars.len();
@@ -229,6 +235,14 @@ pub fn apply_input_shortcuts(text: &str) -> String {
 
     while i < len {
         if chars[i] == '%' && i + 1 < len {
+            // Try combo expansion first (%name%) — combos take priority
+            if !combos.is_empty() {
+                if let Some((expanded, consumed)) = try_expand_combo(&chars, i, combos) {
+                    result.push_str(&expanded);
+                    i += consumed;
+                    continue;
+                }
+            }
             match chars[i + 1] {
                 'B' | 'b' => { result.push('\x02'); i += 2; }
                 'I' | 'i' => { result.push('\x1d'); i += 2; }
@@ -255,6 +269,147 @@ pub fn apply_input_shortcuts(text: &str) -> String {
                         }
                     } else {
                         // Numeric color
+                        result.push('\x03');
+                        while i < len && chars[i].is_ascii_digit() { result.push(chars[i]); i += 1; }
+                        if i < len && chars[i] == ',' {
+                            result.push(',');
+                            i += 1;
+                            while i < len && chars[i].is_ascii_digit() { result.push(chars[i]); i += 1; }
+                        }
+                    }
+                }
+                '%' => { result.push('%'); i += 2; }
+                _ => { result.push('%'); i += 1; }
+            }
+        } else {
+            result.push(chars[i]);
+            i += 1;
+        }
+    }
+    result
+}
+
+/// Try to match %<name>% at position `start` in chars. Returns (expanded, chars_consumed).
+fn try_expand_combo(
+    chars: &[char],
+    start: usize,
+    combos: &std::collections::HashMap<String, crate::config::combos::ComboDefinition>,
+) -> Option<(String, usize)> {
+    use crate::config::combos::ComboDefinition;
+
+    // start points at the opening '%', next char is the first of the name
+    let name_start = start + 1;
+    // Find the closing '%'
+    let mut j = name_start;
+    while j < chars.len() && chars[j] != '%' {
+        // Combo names are alphanumeric + underscore
+        if !chars[j].is_alphanumeric() && chars[j] != '_' {
+            return None;
+        }
+        j += 1;
+    }
+    if j >= chars.len() || j == name_start {
+        return None; // No closing % or empty name
+    }
+
+    let name: String = chars[name_start..j].iter().collect();
+    let name_lower = name.to_lowercase();
+    let combo = combos.get(&name_lower)?;
+    let consumed = j + 1 - start; // includes both % delimiters
+
+    match combo {
+        ComboDefinition::Static(fmt) => {
+            // Expand the static format string using basic shortcuts only (no recursion into combos)
+            let expanded = apply_input_shortcuts_basic(fmt);
+            Some((expanded, consumed))
+        }
+        ComboDefinition::Dynamic(dynamic) if dynamic.combo_type == "cycle" => {
+            // Find the text to colorize: everything from after %name% to %O or end
+            let text_start = start + consumed;
+            let mut text_end = text_start;
+            while text_end < chars.len() {
+                // Check for %O (reset) which ends the cycle region
+                if chars[text_end] == '%'
+                    && text_end + 1 < chars.len()
+                    && (chars[text_end + 1] == 'O' || chars[text_end + 1] == 'o')
+                {
+                    break;
+                }
+                text_end += 1;
+            }
+
+            let text_chars: Vec<char> = chars[text_start..text_end].to_vec();
+            let color_codes: Vec<u8> = dynamic
+                .colors
+                .iter()
+                .filter_map(|name| color_name_to_code(name).or_else(|| name.parse::<u8>().ok()))
+                .collect();
+
+            if color_codes.is_empty() {
+                return Some((String::new(), consumed));
+            }
+
+            let mut expanded = String::new();
+            let mut color_idx = 0;
+            for ch in &text_chars {
+                if !ch.is_whitespace() {
+                    expanded.push('\x03');
+                    expanded.push_str(&color_codes[color_idx % color_codes.len()].to_string());
+                    color_idx += 1;
+                }
+                expanded.push(*ch);
+            }
+            expanded.push('\x0f'); // Reset after cycle
+
+            // Total consumed: %name% + text + %O (if present)
+            let total_consumed = if text_end < chars.len()
+                && chars[text_end] == '%'
+                && text_end + 1 < chars.len()
+            {
+                text_end + 2 - start // includes the %O
+            } else {
+                text_end - start // no %O, just the text
+            };
+
+            Some((expanded, total_consumed))
+        }
+        _ => None, // Unknown dynamic type
+    }
+}
+
+/// Apply only basic format shortcuts (no combo expansion). Used by static combos
+/// to prevent infinite recursion.
+fn apply_input_shortcuts_basic(text: &str) -> String {
+    let mut result = String::with_capacity(text.len());
+    let chars: Vec<char> = text.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        if chars[i] == '%' && i + 1 < len {
+            match chars[i + 1] {
+                'B' | 'b' => { result.push('\x02'); i += 2; }
+                'I' | 'i' => { result.push('\x1d'); i += 2; }
+                'U' | 'u' => { result.push('\x1f'); i += 2; }
+                'R' | 'r' => { result.push('\x16'); i += 2; }
+                'O' | 'o' => { result.push('\x0f'); i += 2; }
+                'C' | 'c' => {
+                    i += 2;
+                    let remaining: String = chars[i..].iter().collect();
+                    if let Some((fg_code, consumed)) = try_parse_color_name(&remaining) {
+                        result.push('\x03');
+                        result.push_str(&fg_code.to_string());
+                        i += consumed;
+                        if i < len && chars[i] == ',' {
+                            i += 1;
+                            let remaining: String = chars[i..].iter().collect();
+                            if let Some((bg_code, consumed)) = try_parse_color_name(&remaining) {
+                                result.push(',');
+                                result.push_str(&bg_code.to_string());
+                                i += consumed;
+                            }
+                        }
+                    } else {
                         result.push('\x03');
                         while i < len && chars[i].is_ascii_digit() { result.push(chars[i]); i += 1; }
                         if i < len && chars[i] == ',' {
@@ -344,19 +499,25 @@ mod tests {
         assert_eq!(strip_formatting("\x02bold\x02 \x034,1colored\x03 text"), "bold colored text");
     }
 
+    fn no_combos() -> std::collections::HashMap<String, crate::config::combos::ComboDefinition> {
+        std::collections::HashMap::new()
+    }
+
     #[test]
     fn input_shortcuts() {
-        assert_eq!(apply_input_shortcuts("%Bbold%B"), "\x02bold\x02");
-        assert_eq!(apply_input_shortcuts("%C4red%O"), "\x034red\x0f");
-        assert_eq!(apply_input_shortcuts("%C4,1red on black"), "\x034,1red on black");
-        assert_eq!(apply_input_shortcuts("100%%"), "100%");
+        let c = no_combos();
+        assert_eq!(apply_input_shortcuts("%Bbold%B", &c), "\x02bold\x02");
+        assert_eq!(apply_input_shortcuts("%C4red%O", &c), "\x034red\x0f");
+        assert_eq!(apply_input_shortcuts("%C4,1red on black", &c), "\x034,1red on black");
+        assert_eq!(apply_input_shortcuts("100%%", &c), "100%");
     }
 
     #[test]
     fn named_color_shortcuts() {
-        assert_eq!(apply_input_shortcuts("%Cred hello%O"), "\x034 hello\x0f");
-        assert_eq!(apply_input_shortcuts("%Cblue,white text"), "\x032,0 text");
-        assert_eq!(apply_input_shortcuts("%Cgreen ok"), "\x033 ok");
+        let c = no_combos();
+        assert_eq!(apply_input_shortcuts("%Cred hello%O", &c), "\x034 hello\x0f");
+        assert_eq!(apply_input_shortcuts("%Cblue,white text", &c), "\x032,0 text");
+        assert_eq!(apply_input_shortcuts("%Cgreen ok", &c), "\x033 ok");
     }
 
     #[test]
@@ -374,5 +535,65 @@ mod tests {
         assert_eq!(spans[0].text, "hello world");
         assert!(!spans[0].bold);
         assert_eq!(spans[0].fg, None);
+    }
+
+    #[test]
+    fn static_combo_expansion() {
+        use crate::config::combos::ComboDefinition;
+        let mut combos = std::collections::HashMap::new();
+        combos.insert("alert".to_string(), ComboDefinition::Static("%B%Cred,white".to_string()));
+        let result = apply_input_shortcuts("%alert%WARNING%O", &combos);
+        // %alert% expands to bold + red,white, then WARNING, then reset
+        assert_eq!(result, "\x02\x034,0WARNING\x0f");
+    }
+
+    #[test]
+    fn cycle_combo_expansion() {
+        use crate::config::combos::{ComboDefinition, DynamicCombo};
+        let mut combos = std::collections::HashMap::new();
+        combos.insert("test".to_string(), ComboDefinition::Dynamic(DynamicCombo {
+            combo_type: "cycle".to_string(),
+            colors: vec!["red".into(), "blue".into()],
+        }));
+        let result = apply_input_shortcuts("%test%ab%O", &combos);
+        // 'a' gets red (4), 'b' gets blue (2), then reset
+        assert_eq!(result, "\x034a\x032b\x0f");
+    }
+
+    #[test]
+    fn cycle_combo_preserves_spaces() {
+        use crate::config::combos::{ComboDefinition, DynamicCombo};
+        let mut combos = std::collections::HashMap::new();
+        combos.insert("rb".to_string(), ComboDefinition::Dynamic(DynamicCombo {
+            combo_type: "cycle".to_string(),
+            colors: vec!["red".into(), "blue".into()],
+        }));
+        let result = apply_input_shortcuts("%rb%a b%O", &combos);
+        // 'a' gets red, space stays plain, 'b' gets blue
+        assert_eq!(result, "\x034a \x032b\x0f");
+    }
+
+    #[test]
+    fn combo_case_insensitive() {
+        use crate::config::combos::ComboDefinition;
+        let mut combos = std::collections::HashMap::new();
+        combos.insert("alert".to_string(), ComboDefinition::Static("%B".to_string()));
+        let result = apply_input_shortcuts("%Alert%hi%O", &combos);
+        assert_eq!(result, "\x02hi\x0f");
+    }
+
+    #[test]
+    fn unknown_combo_falls_through_to_shortcuts() {
+        let c = no_combos();
+        // %U is underline, so %unknown% starts with underline shortcut
+        let result = apply_input_shortcuts("%unknown%text", &c);
+        assert!(result.starts_with("\x1f")); // underline from %U
+    }
+
+    #[test]
+    fn unknown_name_no_shortcut_conflict() {
+        let c = no_combos();
+        // %xyz% — 'x' isn't a shortcut, so % is literal
+        assert_eq!(apply_input_shortcuts("%xyz%text", &c), "%xyz%text");
     }
 }

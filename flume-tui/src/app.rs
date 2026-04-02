@@ -430,6 +430,8 @@ pub struct App {
     pub dcc_command: Option<String>,
     /// Channels for sending messages to DCC CHAT sessions (id → tx).
     pub dcc_chat_senders: HashMap<u64, tokio::sync::mpsc::Sender<String>>,
+    /// User-defined color combos (runtime copy, persisted via /save).
+    pub combos: std::collections::HashMap<String, flume_core::config::combos::ComboDefinition>,
     // Global buffer for messages when no server is active
     global_messages: VecDeque<DisplayMessage>,
 }
@@ -456,6 +458,7 @@ impl App {
         show_join_part: bool,
         show_hostmask_on_join: bool,
         formats: FormatsConfig,
+        combos: std::collections::HashMap<String, flume_core::config::combos::ComboDefinition>,
     ) -> Self {
         // Load snotice rules from file, merge with any in [formats] config
         let mut snotice_configs = flume_core::config::load_snotice_rules();
@@ -501,6 +504,7 @@ impl App {
             dcc_transfers: Vec::new(),
             dcc_command: None,
             dcc_chat_senders: HashMap::new(),
+            combos,
             global_messages: VecDeque::new(),
         }
     }

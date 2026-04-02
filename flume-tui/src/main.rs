@@ -83,6 +83,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         flume_config.ui.show_join_part,
         flume_config.ui.show_hostmask_on_join,
         flume_config.formats.clone(),
+        {
+            let mut combos = flume_core::config::combos::default_combos();
+            combos.extend(flume_config.combos.combos.clone());
+            combos
+        },
     );
     app.irc_config = irc_config;
     app.active_theme = flume_config.ui.theme.clone();

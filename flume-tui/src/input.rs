@@ -1145,6 +1145,14 @@ async fn process_input(
                     t.insert("show_hostmask_on_join".to_string(), toml::Value::Boolean(app.show_hostmask_on_join));
                 }
 
+                // Update combos section
+                let combos_config = flume_core::config::combos::CombosConfig {
+                    combos: app.combos.clone(),
+                };
+                if let Ok(combos_value) = toml::Value::try_from(&combos_config) {
+                    config.insert("combos".to_string(), combos_value);
+                }
+
                 let _ = std::fs::create_dir_all(flume_core::config::config_dir());
                 match toml::to_string_pretty(&config) {
                     Ok(toml_str) => {
@@ -1256,13 +1264,19 @@ async fn process_input(
                 app.script_command = Some(args.to_string());
             }
             "color" | "colour" => {
-                // /color <name> <text> — send text in a color
+                // /color combo ... — manage color combos
                 let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                if parts.first().copied() == Some("combo") {
+                    handle_color_combo_command(parts.get(1).copied().unwrap_or(""), app);
+                    return;
+                }
+                // /color <name> <text> — send text in a color
                 if parts.len() < 2 {
                     app.system_message("Usage: /color <name> <text>");
                     app.system_message("  /color red Hello world!");
                     app.system_message("  /color blue,white Blue on white");
                     app.system_message("  See /colors for available color names");
+                    app.system_message("  /color combo list|add|remove|test — manage combos");
                     return;
                 }
                 let color_spec = parts[0];
@@ -1364,7 +1378,7 @@ async fn process_input(
     } else {
         // Replace emoji shortcodes and IRC format shortcuts before sending
         let text = &flume_core::emoji::replace_shortcodes(text);
-        let text = &flume_core::irc_format::apply_input_shortcuts(text);
+        let text = &flume_core::irc_format::apply_input_shortcuts(text, &app.combos);
 
         // Send as PRIVMSG to current target
         let target = app.active_target().map(|s| s.to_string());
@@ -1759,6 +1773,7 @@ fn show_help(app: &mut App) {
     app.system_message("    /snotice add|suppress|list|rm|save|test|last");
     app.system_message("                             — Manage server notice rules");
     app.system_message("    /color <name> <text>     — Send colored text");
+    app.system_message("    /color combo list|add|rm — Manage color combos");
     app.system_message("    /colors                  — Show available colors");
     app.system_message("    /set [key] [value]       — View or change settings");
     app.system_message("    /quote <raw line>        — Send raw IRC line");
@@ -2000,6 +2015,16 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("  %B bold  %I italic  %U underline  %R reverse  %O reset");
             app.system_message("  %C<color> or %C<fg>,<bg> for inline colors");
             app.system_message("  Example: %Cred hello %O world");
+            app.system_message("");
+            app.system_message("  Color combos (reusable shortcuts):");
+            app.system_message("  %rainbow%text%O — apply a combo to text");
+            app.system_message("  /color combo list             — list all combos");
+            app.system_message("  /color combo add <name> <fmt> — add static combo");
+            app.system_message("  /color combo add <name> cycle <colors...>");
+            app.system_message("                                — add cycling combo");
+            app.system_message("  /color combo remove <name>    — remove a combo");
+            app.system_message("  /color combo test <name> <text>");
+            app.system_message("                                — preview a combo");
         }
         "colors" | "colours" => {
             app.system_message("/colors");
@@ -2442,6 +2467,121 @@ fn handle_generate_init_input(text: &str, step: u8, app: &mut App) {
         }
         _ => {
             app.generate_init_step = None;
+        }
+    }
+}
+
+fn handle_color_combo_command(args: &str, app: &mut App) {
+    use flume_core::config::combos::{ComboDefinition, DynamicCombo};
+
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let subcmd = parts.first().copied().unwrap_or("");
+    match subcmd {
+        "list" | "ls" | "" => {
+            if app.combos.is_empty() {
+                app.system_message("No color combos defined");
+                app.system_message("Usage: /color combo add <name> <format>");
+                app.system_message("       /color combo add <name> cycle <color1> <color2> ...");
+                return;
+            }
+            let mut lines = vec!["Color combos:".to_string()];
+            let mut names: Vec<_> = app.combos.keys().cloned().collect();
+            names.sort();
+            for name in &names {
+                let desc = match &app.combos[name] {
+                    ComboDefinition::Static(fmt) => format!("  %{}% = {}", name, fmt),
+                    ComboDefinition::Dynamic(d) => {
+                        format!("  %{}% = {} [{}]", name, d.combo_type, d.colors.join(", "))
+                    }
+                };
+                lines.push(desc);
+            }
+            lines.push("Use %<name>%text%O in messages".to_string());
+            for line in &lines {
+                app.system_message(line);
+            }
+        }
+        "add" => {
+            let rest = parts.get(1).copied().unwrap_or("").trim();
+            let add_parts: Vec<&str> = rest.splitn(2, ' ').collect();
+            if add_parts.len() < 2 {
+                app.system_message("Usage: /color combo add <name> <format string>");
+                app.system_message("       /color combo add <name> cycle <color1> <color2> ...");
+                app.system_message("  Example: /color combo add alert %B%Cred,white");
+                app.system_message("  Example: /color combo add pride cycle red orange yellow green blue purple");
+                return;
+            }
+            let name = add_parts[0].to_lowercase();
+            let def = add_parts[1].trim();
+
+            if def.starts_with("cycle ") || def.starts_with("cycle\t") {
+                // Dynamic cycle combo
+                let colors: Vec<String> = def[6..]
+                    .split_whitespace()
+                    .map(|s| s.to_string())
+                    .collect();
+                if colors.is_empty() {
+                    app.system_message("Cycle combo needs at least one color");
+                    return;
+                }
+                // Validate color names
+                for c in &colors {
+                    if flume_core::irc_format::color_name_to_code(c).is_none()
+                        && c.parse::<u8>().is_err()
+                    {
+                        app.system_message(&format!("Unknown color: {}. See /colors", c));
+                        return;
+                    }
+                }
+                app.combos.insert(
+                    name.clone(),
+                    ComboDefinition::Dynamic(DynamicCombo {
+                        combo_type: "cycle".to_string(),
+                        colors,
+                    }),
+                );
+                app.system_message(&format!("Added cycle combo: %{}%", name));
+            } else {
+                // Static combo
+                app.combos.insert(name.clone(), ComboDefinition::Static(def.to_string()));
+                app.system_message(&format!("Added combo: %{}% = {}", name, def));
+            }
+            app.system_message("Use /save to persist");
+        }
+        "remove" | "rm" | "del" => {
+            let name = parts.get(1).copied().unwrap_or("").trim().to_lowercase();
+            if name.is_empty() {
+                app.system_message("Usage: /color combo remove <name>");
+                return;
+            }
+            if app.combos.remove(&name).is_some() {
+                app.system_message(&format!("Removed combo: {}", name));
+                app.system_message("Use /save to persist");
+            } else {
+                app.system_message(&format!("No combo named '{}'. See /color combo list", name));
+            }
+        }
+        "test" => {
+            let rest = parts.get(1).copied().unwrap_or("").trim();
+            let test_parts: Vec<&str> = rest.splitn(2, ' ').collect();
+            if test_parts.len() < 2 {
+                app.system_message("Usage: /color combo test <name> <text>");
+                app.system_message("  Example: /color combo test rainbow Hello world!");
+                return;
+            }
+            let name = test_parts[0].to_lowercase();
+            let text = test_parts[1];
+            if !app.combos.contains_key(&name) {
+                app.system_message(&format!("No combo named '{}'. See /color combo list", name));
+                return;
+            }
+            // Build the formatted string and display it as a system message
+            let input = format!("%{}%{}%O", name, text);
+            let formatted = flume_core::irc_format::apply_input_shortcuts(&input, &app.combos);
+            app.system_message(&format!("Preview: {}", formatted));
+        }
+        _ => {
+            app.system_message("Usage: /color combo list|add|remove|test");
         }
     }
 }
