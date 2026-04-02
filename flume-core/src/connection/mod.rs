@@ -275,7 +275,7 @@ impl ServerConnection {
                         continue;
                     }
 
-                    tracing::trace!("<< {}", raw);
+                    tracing::debug!("<< {}", raw);
 
                     let parsed = match parser::parse(raw) {
                         Ok(msg) => msg,
@@ -352,19 +352,21 @@ impl ServerConnection {
                     // Handle BATCH protocol
                     if let Command::Batch { ref reference, .. } = message.command {
                         if reference.starts_with('+') {
-                            // Start batch — buffer messages until -ref
                             let ref_id = reference[1..].to_string();
+                            tracing::info!("[{}] BATCH start: {}", server_name, ref_id);
                             active_batches.insert(ref_id, Vec::new());
                         } else if reference.starts_with('-') {
-                            // End batch — process all buffered messages
                             let ref_id = reference[1..].to_string();
                             if let Some(messages) = active_batches.remove(&ref_id) {
+                                tracing::info!("[{}] BATCH end: {} ({} messages)", server_name, ref_id, messages.len());
                                 for msg in messages {
                                     let _ = self.event_tx.send(IrcEvent::MessageReceived {
                                         server_name: server_name.to_string(),
                                         message: msg,
                                     });
                                 }
+                            } else {
+                                tracing::warn!("[{}] BATCH end for unknown ref: {}", server_name, ref_id);
                             }
                         }
                         continue;
@@ -378,6 +380,8 @@ impl ServerConnection {
                         if let Some(batch) = active_batches.get_mut(batch_id.as_str()) {
                             batch.push(message);
                             continue;
+                        } else {
+                            tracing::warn!("[{}] Message has batch tag {} but no active batch", server_name, batch_id);
                         }
                     }
 

@@ -942,7 +942,7 @@ impl App {
                                 msg_text == text && (now - *sent_at).num_seconds() < 30
                             });
                             if is_recent_echo {
-                                // Remove the matched entry so we don't skip duplicates forever
+                                tracing::debug!("Echo dedup: skipping own message '{}'", &text[..text.len().min(50)]);
                                 ss.recent_own_messages.retain(|(msg_text, _)| msg_text != text);
                                 return notifications;
                             }
