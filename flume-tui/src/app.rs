@@ -1188,18 +1188,6 @@ impl App {
                             scrollback,
                         );
                     }
-                    Command::Notice { text, .. } => {
-                        ss.add_message(
-                            "",
-                            DisplayMessage {
-                                timestamp,
-                                source: MessageSource::Server,
-                                text: text.clone(),
-                                highlight: false,
-                            },
-                            scrollback,
-                        );
-                    }
                     Command::Numeric { code, params } => {
                         // Helper: labeled server message to server buffer
                         let labeled = |label: &str, text: &str| DisplayMessage {
