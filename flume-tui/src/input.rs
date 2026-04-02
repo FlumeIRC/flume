@@ -2630,24 +2630,33 @@ fn handle_snotice_command(args: &str, app: &mut App) {
                     app.system_message(&format!("Suppressed: {}", &raw[..raw.len().min(80)]));
                     app.system_message("Use /snotice save to persist");
                 } else if rest.starts_with("route ") {
-                    let buf_name = rest.strip_prefix("route ").unwrap().trim();
+                    let route_args = rest.strip_prefix("route ").unwrap().trim();
+                    // Parse: <buffer> [--format <fmt>]
+                    let route_parts: Vec<&str> = route_args.splitn(2, " --format ").collect();
+                    let buf_name = route_parts[0].trim();
+                    let fmt = route_parts.get(1).map(|s| s.trim().to_string());
                     let escaped = regex::escape(raw);
                     let rule = flume_core::config::formats::SnoticeRuleConfig {
                         pattern: escaped,
-                        format: None,
+                        format: fmt.clone(),
                         buffer: Some(buf_name.to_string()),
                         suppress: false,
                     };
                     app.snotice_configs.push(rule);
                     app.snotice_rules = crate::app::compile_snotice_rules(&app.snotice_configs);
-                    app.system_message(&format!("Routing to buffer '{}'. Use /snotice save to persist", buf_name));
+                    if let Some(ref f) = fmt {
+                        app.system_message(&format!("Routing to '{}' with format '{}'. /snotice save to persist", buf_name, f));
+                    } else {
+                        app.system_message(&format!("Routing to '{}'. /snotice save to persist", buf_name));
+                    }
                 } else if rest == "show" {
                     app.system_message(&format!("Last notice text:"));
                     app.system_message(raw);
                     app.system_message("");
-                    app.system_message("  /snotice last              — suppress it");
-                    app.system_message("  /snotice last route <buf>  — route to buffer");
-                    app.system_message("  /snotice last show         — show raw text");
+                    app.system_message("  /snotice last                          — suppress it");
+                    app.system_message("  /snotice last route <buf>              — route to buffer");
+                    app.system_message("  /snotice last route <buf> --format <f> — route with format");
+                    app.system_message("  /snotice last show                     — show raw text");
                 } else {
                     app.system_message("Usage: /snotice last [suppress|route <buffer>|show]");
                 }
