@@ -32,11 +32,14 @@ pub fn render_buffer(
     timestamp_format: &str,
     theme: &Theme,
 ) {
-    let height = area.height as usize;
     let total = messages.len();
 
+    // Take all messages from scroll_offset to the end and format them.
+    // We take more than the visible height because wrapped lines take
+    // extra vertical space. Paragraph::scroll handles showing the bottom.
     let end = total.saturating_sub(scroll_offset);
-    let start = end.saturating_sub(height);
+    // Take up to 200 recent messages (more than any screen height, accounts for wrapping)
+    let start = end.saturating_sub(200);
 
     let lines: Vec<Line> = messages
         .iter()
@@ -45,7 +48,24 @@ pub fn render_buffer(
         .map(|msg| format_message(msg, timestamp_format, search, theme))
         .collect();
 
-    let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
+    let height = area.height as usize;
+    let paragraph = Paragraph::new(lines.clone())
+        .wrap(ratatui::widgets::Wrap { trim: false });
+
+    // Calculate how many visual lines the paragraph produces, then scroll
+    // to the bottom so the latest messages are visible.
+    // Approximate: count lines + extra for wrapping (assume avg 1.5x for wrapped)
+    let visual_lines: usize = lines.iter()
+        .map(|l| {
+            let width = area.width as usize;
+            if width == 0 { return 1; }
+            let line_width: usize = l.spans.iter().map(|s| s.content.len()).sum();
+            (line_width / width.max(1)) + 1
+        })
+        .sum();
+    let scroll_y = visual_lines.saturating_sub(height) as u16;
+
+    let paragraph = paragraph.scroll((scroll_y, 0));
     frame.render_widget(paragraph, area);
 
     if scroll_offset > 0 {
