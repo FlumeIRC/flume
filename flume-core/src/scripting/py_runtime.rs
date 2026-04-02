@@ -12,6 +12,7 @@ struct PySharedState {
     custom_commands: HashMap<String, (String, PyObject, String)>,
     actions: Vec<ScriptAction>,
     current_script: String,
+    vault_secrets: HashMap<String, String>,
 }
 
 /// The bridge object exposed to Python as `_flume_bridge`.
@@ -129,6 +130,14 @@ impl FlumeBridge {
             });
     }
 
+    fn vault_get(&self, py: Python<'_>, name: String) -> PyObject {
+        let s = self.state.lock().unwrap();
+        match s.vault_secrets.get(&name) {
+            Some(val) => val.into_pyobject(py).unwrap().into_any().unbind(),
+            None => py.None(),
+        }
+    }
+
     fn config_get(&self, py: Python<'_>, key: String) -> PyObject {
         let script_name = self.state.lock().unwrap().current_script.clone();
         if script_name.is_empty() {
@@ -234,6 +243,11 @@ class _Ui:
     def notify(message, level=None):
         _flume_bridge.ui_notify(message, level)
 
+class _Vault:
+    @staticmethod
+    def get(name):
+        return _flume_bridge.vault_get(name)
+
 flume_mod = types.ModuleType("flume")
 flume_mod.event = _Event()
 flume_mod.server = _Server()
@@ -242,6 +256,7 @@ flume_mod.buffer = _Buffer()
 flume_mod.command = _Command()
 flume_mod.config = _Config()
 flume_mod.ui = _Ui()
+flume_mod.vault = _Vault()
 
 sys.modules["flume"] = flume_mod
 sys.modules["flume.event"] = flume_mod.event
@@ -249,6 +264,7 @@ sys.modules["flume.server"] = flume_mod.server
 sys.modules["flume.channel"] = flume_mod.channel
 sys.modules["flume.buffer"] = flume_mod.buffer
 sys.modules["flume.command"] = flume_mod.command
+sys.modules["flume.vault"] = flume_mod.vault
 sys.modules["flume.config"] = flume_mod.config
 sys.modules["flume.ui"] = flume_mod.ui
 "#;
@@ -265,6 +281,7 @@ impl PyRuntime {
             custom_commands: HashMap::new(),
             actions: Vec::new(),
             current_script: String::new(),
+            vault_secrets: HashMap::new(),
         }));
 
         Python::with_gil(|py| {
@@ -411,6 +428,10 @@ impl PyRuntime {
             .get(name)
             .map(|(_, _, help)| help.clone())
             .filter(|h| !h.is_empty())
+    }
+
+    pub fn set_vault_secrets(&self, secrets: HashMap<String, String>) {
+        self.state.lock().unwrap().vault_secrets = secrets;
     }
 
     pub fn custom_command_names(&self) -> Vec<String> {

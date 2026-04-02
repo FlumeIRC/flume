@@ -345,6 +345,15 @@ impl ScriptManager {
         None
     }
 
+    /// Set vault secrets for scripts to read via flume.vault.get().
+    pub fn set_vault_secrets(&self, secrets: HashMap<String, String>) {
+        self.lua.set_vault_secrets(secrets.clone());
+        #[cfg(feature = "python")]
+        if let Some(ref py) = self.py {
+            py.set_vault_secrets(secrets);
+        }
+    }
+
     pub fn custom_command_names(&self) -> Vec<String> {
         let mut names = self.lua.custom_command_names();
         #[cfg(feature = "python")]

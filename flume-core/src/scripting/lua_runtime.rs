@@ -16,6 +16,8 @@ pub(crate) struct SharedState {
     pub(crate) actions: Vec<ScriptAction>,
     /// The currently executing script name (set during exec_script).
     pub(crate) current_script: String,
+    /// Read-only vault secrets (populated from main on startup).
+    pub(crate) vault_secrets: HashMap<String, String>,
 }
 
 /// Wraps the Lua VM and manages script state.
@@ -33,6 +35,7 @@ impl LuaRuntime {
             custom_commands: HashMap::new(),
             actions: Vec::new(),
             current_script: String::new(),
+            vault_secrets: HashMap::new(),
         }));
 
         // Apply sandbox restrictions
@@ -157,6 +160,11 @@ impl LuaRuntime {
     }
 
     /// Get all custom command names.
+    /// Set vault secrets (called from main after vault is unlocked).
+    pub fn set_vault_secrets(&self, secrets: HashMap<String, String>) {
+        self.state.lock().unwrap().vault_secrets = secrets;
+    }
+
     pub fn custom_command_names(&self) -> Vec<String> {
         self.state
             .lock()

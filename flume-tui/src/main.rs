@@ -99,6 +99,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    // Pass vault secrets to script engine
+    if let Some(ref mgr) = script_manager {
+        if let Some(ref v) = vault {
+            let secrets: std::collections::HashMap<String, String> = v
+                .list()
+                .into_iter()
+                .filter_map(|name| v.get(name).map(|val| (name.to_string(), val.to_string())))
+                .collect();
+            mgr.set_vault_secrets(secrets);
+        }
+    }
+
     // Load autoload scripts
     if let Some(ref mut mgr) = script_manager {
         let results = mgr.load_autoload();
@@ -782,6 +794,15 @@ fn handle_script_command(args: &str, mgr: &mut ScriptManager, app: &mut app::App
                 let _ = v.save();
                 *vault = Some(v);
                 app.vault_unlocked = true;
+            }
+            // Refresh script engine vault secrets
+            if let Some(ref v) = vault {
+                let secrets: std::collections::HashMap<String, String> = v
+                    .list()
+                    .into_iter()
+                    .filter_map(|name| v.get(name).map(|val| (name.to_string(), val.to_string())))
+                    .collect();
+                mgr.set_vault_secrets(secrets);
             }
             if let Some(ref mut v) = vault {
                 v.set("flume_llm_key".to_string(), key.to_string());

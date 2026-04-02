@@ -16,8 +16,30 @@ pub(crate) fn register_all(lua: &Lua, state: State) -> LuaResult<()> {
     register_command_api(lua, &flume, Arc::clone(&state))?;
     register_config_api(lua, &flume, Arc::clone(&state))?;
     register_ui_api(lua, &flume, Arc::clone(&state))?;
+    register_vault_api(lua, &flume, Arc::clone(&state))?;
 
     lua.globals().set("flume", flume)?;
+    Ok(())
+}
+
+/// flume.vault — read-only access to vault secrets.
+fn register_vault_api(lua: &Lua, flume: &Table, state: State) -> LuaResult<()> {
+    let vault_tbl = lua.create_table()?;
+
+    // flume.vault.get(name) — read a vault secret
+    let state_get = Arc::clone(&state);
+    vault_tbl.set(
+        "get",
+        lua.create_function(move |lua, name: String| -> LuaResult<Value> {
+            let s = state_get.lock().unwrap();
+            match s.vault_secrets.get(&name) {
+                Some(val) => Ok(Value::String(lua.create_string(val)?)),
+                None => Ok(Value::Nil),
+            }
+        })?,
+    )?;
+
+    flume.set("vault", vault_tbl)?;
     Ok(())
 }
 
