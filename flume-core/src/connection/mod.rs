@@ -235,7 +235,7 @@ impl ServerConnection {
         let mut our_nick = initial_nick.to_string();
         let mut line_buf = String::new();
         let mut last_activity = Instant::now();
-        let ping_interval = Duration::from_secs(120);
+        let ping_interval = Duration::from_secs(60);
         let ping_timeout = Duration::from_secs(30);
         let mut awaiting_pong = false;
         let mut pong_deadline: Option<Instant> = None;
@@ -286,10 +286,13 @@ impl ServerConnection {
                     let owned = OwnedIrcMessage::from(parsed);
                     let message = ParsedMessage::from_owned(owned);
 
-                    // Handle PING internally
+                    // Handle PING/PONG internally
                     if let Command::Ping { ref token } = message.command {
                         let pong = format!("PONG :{}", token);
                         let _ = write_tx.send(pong).await;
+                        continue;
+                    }
+                    if matches!(message.command, Command::Pong { .. }) {
                         continue;
                     }
 
