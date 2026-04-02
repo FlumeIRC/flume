@@ -649,7 +649,13 @@ async fn process_input(
                         target: target.clone(),
                         text: msg_text.clone(),
                     }).await;
-                    // Always show locally
+                    // Track for echo dedup and show locally
+                    if let Some(ss) = app.active_server_state_mut() {
+                        ss.recent_own_messages.push_back((msg_text.clone(), chrono::Utc::now()));
+                        while ss.recent_own_messages.len() > 20 {
+                            ss.recent_own_messages.pop_front();
+                        }
+                    }
                     let nick = app.active_nick().to_string();
                     let scrollback = app.scrollback_limit;
                     if let Some(ss) = app.active_server_state_mut() {
@@ -1300,7 +1306,14 @@ async fn process_input(
                 target: target.clone(),
                 text: text.to_string(),
             }).await;
-            // Always show our own message locally
+            // Track for echo deduplication and show locally
+            if let Some(ss) = app.active_server_state_mut() {
+                ss.recent_own_messages.push_back((text.to_string(), chrono::Utc::now()));
+                // Keep only last 20 entries
+                while ss.recent_own_messages.len() > 20 {
+                    ss.recent_own_messages.pop_front();
+                }
+            }
             let nick = app.active_nick().to_string();
             let scrollback = app.scrollback_limit;
             if let Some(ss) = app.active_server_state_mut() {

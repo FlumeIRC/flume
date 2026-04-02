@@ -212,6 +212,9 @@ pub struct ServerState {
     pub command_tx: Option<mpsc::Sender<UserCommand>>,
     /// Server supports echo-message (our messages are echoed back).
     pub has_echo_message: bool,
+    /// Recently sent messages (text, timestamp) for echo deduplication.
+    /// Only the last few are kept to distinguish echoes from bouncer playback.
+    pub recent_own_messages: VecDeque<(String, chrono::DateTime<chrono::Utc>)>,
 }
 
 impl ServerState {
@@ -228,6 +231,7 @@ impl ServerState {
             connection_state: ConnectionState::Disconnected,
             command_tx: None,
             has_echo_message: false,
+            recent_own_messages: VecDeque::new(),
         }
     }
 
@@ -926,9 +930,19 @@ impl App {
                             return notifications;
                         }
 
-                        // Skip our own echoed messages — we already added them locally
+                        // Deduplicate echo-message: skip if we sent this exact
+                        // message recently (within 30s). Allows bouncer playback
+                        // of older own messages to come through.
                         if is_own && ss.has_echo_message {
-                            return notifications;
+                            let now = chrono::Utc::now();
+                            let is_recent_echo = ss.recent_own_messages.iter().any(|(msg_text, sent_at)| {
+                                msg_text == text && (now - *sent_at).num_seconds() < 30
+                            });
+                            if is_recent_echo {
+                                // Remove the matched entry so we don't skip duplicates forever
+                                ss.recent_own_messages.retain(|(msg_text, _)| msg_text != text);
+                                return notifications;
+                            }
                         }
 
                         let source = if is_own {
