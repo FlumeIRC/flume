@@ -50,7 +50,7 @@ pub async fn perform_registration<R: tokio::io::AsyncRead + Unpin>(
     realname: &str,
     auth: &AuthConfig,
     server_password: Option<&str>,
-    event_tx: &tokio::sync::broadcast::Sender<IrcEvent>,
+    event_tx: &tokio::sync::mpsc::Sender<IrcEvent>,
     server_name: &str,
 ) -> Result<RegistrationResult, ConnectionError> {
     let mut capabilities = std::collections::HashSet::new();
@@ -69,7 +69,7 @@ pub async fn perform_registration<R: tokio::io::AsyncRead + Unpin>(
     let _ = event_tx.send(IrcEvent::StateChanged {
         server_name: server_name.to_string(),
         state: ConnectionState::Registering,
-    });
+    }).await;
 
     let mut sasl_in_progress = false;
     let mut line_buf = String::new();

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::mpsc;
 
 use crate::config::general::{CtcpConfig, GeneralConfig};
 use crate::config::server::ServerConfig;
@@ -24,7 +24,7 @@ const WRITE_CHANNEL_CAPACITY: usize = 256;
 
 /// Handles for interacting with a ServerConnection from outside.
 pub struct ConnectionHandle {
-    pub event_rx: broadcast::Receiver<IrcEvent>,
+    pub event_rx: mpsc::Receiver<IrcEvent>,
     pub command_tx: mpsc::Sender<UserCommand>,
 }
 
@@ -34,7 +34,7 @@ pub struct ServerConnection {
     general_config: GeneralConfig,
     ctcp_config: CtcpConfig,
     vault: Option<Vault>,
-    event_tx: broadcast::Sender<IrcEvent>,
+    event_tx: mpsc::Sender<IrcEvent>,
     command_rx: mpsc::Receiver<UserCommand>,
 }
 
@@ -47,7 +47,7 @@ impl ServerConnection {
         vault: Option<Vault>,
         ctcp_config: CtcpConfig,
     ) -> (Self, ConnectionHandle) {
-        let (event_tx, event_rx) = broadcast::channel(EVENT_BUS_CAPACITY);
+        let (event_tx, event_rx) = mpsc::channel(EVENT_BUS_CAPACITY);
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CHANNEL_CAPACITY);
 
         let conn = ServerConnection {
