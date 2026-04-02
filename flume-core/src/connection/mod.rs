@@ -24,7 +24,7 @@ const WRITE_CHANNEL_CAPACITY: usize = 256;
 
 /// Handles for interacting with a ServerConnection from outside.
 pub struct ConnectionHandle {
-    pub event_rx: mpsc::Receiver<IrcEvent>,
+    pub event_rx: mpsc::UnboundedReceiver<IrcEvent>,
     pub command_tx: mpsc::Sender<UserCommand>,
 }
 
@@ -34,7 +34,7 @@ pub struct ServerConnection {
     general_config: GeneralConfig,
     ctcp_config: CtcpConfig,
     vault: Option<Vault>,
-    event_tx: mpsc::Sender<IrcEvent>,
+    event_tx: mpsc::UnboundedSender<IrcEvent>,
     command_rx: mpsc::Receiver<UserCommand>,
 }
 
@@ -47,7 +47,7 @@ impl ServerConnection {
         vault: Option<Vault>,
         ctcp_config: CtcpConfig,
     ) -> (Self, ConnectionHandle) {
-        let (event_tx, event_rx) = mpsc::channel(EVENT_BUS_CAPACITY);
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
         let (command_tx, command_rx) = mpsc::channel(COMMAND_CHANNEL_CAPACITY);
 
         let conn = ServerConnection {
@@ -84,7 +84,7 @@ impl ServerConnection {
                 tokio::time::sleep(reconnect_delay).await;
             }
 
-            let _ = self.event_tx.try_send(IrcEvent::StateChanged {
+            let _ = self.event_tx.send(IrcEvent::StateChanged {
                 server_name: server_name.clone(),
                 state: ConnectionState::Connecting,
             });
@@ -92,7 +92,7 @@ impl ServerConnection {
             match self.connect_and_run().await {
                 Ok(()) => {
                     // Clean disconnect (user requested quit)
-                    let _ = self.event_tx.try_send(IrcEvent::Disconnected {
+                    let _ = self.event_tx.send(IrcEvent::Disconnected {
                         server_name: server_name.clone(),
                         reason: DisconnectReason::UserRequested,
                     });
@@ -100,7 +100,7 @@ impl ServerConnection {
                 }
                 Err(e) => {
                     tracing::error!("[{}] Connection error: {}", server_name, e);
-                    let _ = self.event_tx.try_send(IrcEvent::Disconnected {
+                    let _ = self.event_tx.send(IrcEvent::Disconnected {
                         server_name: server_name.clone(),
                         reason: DisconnectReason::Error(e.to_string()),
                     });
@@ -209,13 +209,13 @@ impl ServerConnection {
             result.capabilities
         );
 
-        let _ = self.event_tx.try_send(IrcEvent::Connected {
+        let _ = self.event_tx.send(IrcEvent::Connected {
             server_name: server_name.clone(),
             our_nick: result.nick.clone(),
             capabilities: result.capabilities.clone(),
         });
 
-        let _ = self.event_tx.try_send(IrcEvent::StateChanged {
+        let _ = self.event_tx.send(IrcEvent::StateChanged {
             server_name: server_name.clone(),
             state: ConnectionState::Connected,
         });
@@ -348,7 +348,7 @@ impl ServerConnection {
                     }
 
                     // Broadcast to consumers
-                    let _ = self.event_tx.try_send(IrcEvent::MessageReceived {
+                    let _ = self.event_tx.send(IrcEvent::MessageReceived {
                         server_name: server_name.to_string(),
                         message,
                     });

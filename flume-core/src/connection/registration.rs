@@ -50,7 +50,7 @@ pub async fn perform_registration<R: tokio::io::AsyncRead + Unpin>(
     realname: &str,
     auth: &AuthConfig,
     server_password: Option<&str>,
-    event_tx: &tokio::sync::mpsc::Sender<IrcEvent>,
+    event_tx: &tokio::sync::mpsc::UnboundedSender<IrcEvent>,
     server_name: &str,
 ) -> Result<RegistrationResult, ConnectionError> {
     let mut capabilities = std::collections::HashSet::new();
@@ -66,7 +66,7 @@ pub async fn perform_registration<R: tokio::io::AsyncRead + Unpin>(
     send(write_tx, &format!("NICK :{}", nick)).await?;
     send(write_tx, &format!("USER {} 0 * :{}", username, realname)).await?;
 
-    let _ = event_tx.try_send(IrcEvent::StateChanged {
+    let _ = event_tx.send(IrcEvent::StateChanged {
         server_name: server_name.to_string(),
         state: ConnectionState::Registering,
     });
