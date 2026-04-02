@@ -241,6 +241,8 @@ impl ServerConnection {
         let mut pong_deadline: Option<Instant> = None;
         // CTCP rate limiting: track last response time per source nick
         let mut ctcp_last_response: HashMap<String, Instant> = HashMap::new();
+        // BATCH buffering: active batches hold messages until completion
+        let mut active_batches: HashMap<String, Vec<ParsedMessage>> = HashMap::new();
 
         loop {
             let timeout_duration = if awaiting_pong {
@@ -344,6 +346,38 @@ impl ServerConnection {
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // Handle BATCH protocol
+                    if let Command::Batch { ref reference, .. } = message.command {
+                        if reference.starts_with('+') {
+                            // Start batch — buffer messages until -ref
+                            let ref_id = reference[1..].to_string();
+                            active_batches.insert(ref_id, Vec::new());
+                        } else if reference.starts_with('-') {
+                            // End batch — process all buffered messages
+                            let ref_id = reference[1..].to_string();
+                            if let Some(messages) = active_batches.remove(&ref_id) {
+                                for msg in messages {
+                                    let _ = self.event_tx.send(IrcEvent::MessageReceived {
+                                        server_name: server_name.to_string(),
+                                        message: msg,
+                                    });
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Check if message belongs to an active batch
+                    let batch_ref: Option<String> = message.tags.iter()
+                        .find(|t| t.key == "batch")
+                        .and_then(|t| t.value.clone());
+                    if let Some(ref batch_id) = batch_ref {
+                        if let Some(batch) = active_batches.get_mut(batch_id.as_str()) {
+                            batch.push(message);
+                            continue;
                         }
                     }
 

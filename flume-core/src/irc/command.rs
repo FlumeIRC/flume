@@ -29,6 +29,7 @@ pub enum Command {
     // IRCv3
     Cap { subcommand: CapSubcommand },
     Authenticate { data: String },
+    Batch { reference: String, batch_type: Option<String>, params: Vec<String> },
 
     // Numeric replies
     Numeric { code: u16, params: Vec<String> },
@@ -191,6 +192,20 @@ impl Command {
             "AUTHENTICATE" => Command::Authenticate {
                 data: msg.params.first().cloned().unwrap_or_default(),
             },
+            "BATCH" => {
+                let reference = msg.params.first().cloned().unwrap_or_default();
+                // +ref starts a batch, -ref ends it
+                let batch_type = if reference.starts_with('+') {
+                    msg.params.get(1).cloned()
+                } else {
+                    None
+                };
+                Command::Batch {
+                    reference,
+                    batch_type,
+                    params: msg.params[1..].to_vec(),
+                }
+            },
             _ => {
                 // Try to parse as numeric
                 if let Ok(code) = cmd.parse::<u16>() {
@@ -298,6 +313,13 @@ impl Command {
                         }
                     }
                     s
+                }
+            }
+            Command::Batch { reference, params, .. } => {
+                if params.is_empty() {
+                    format!("BATCH {}", reference)
+                } else {
+                    format!("BATCH {} {}", reference, params.join(" "))
                 }
             }
             Command::Raw { command, params } => {
