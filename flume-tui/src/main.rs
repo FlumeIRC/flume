@@ -685,9 +685,20 @@ fn spawn_connection(
     let collector_tx = event_collector_tx.clone();
     let mut event_rx = handle.event_rx;
     tokio::spawn(async move {
-        while let Ok(event) = event_rx.recv().await {
-            if collector_tx.send(event).await.is_err() {
-                break;
+        loop {
+            match event_rx.recv().await {
+                Ok(event) => {
+                    if collector_tx.send(event).await.is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!("Event bridge lagged, dropped {} events", n);
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    break;
+                }
             }
         }
     });
