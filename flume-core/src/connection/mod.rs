@@ -18,7 +18,6 @@ use crate::irc::parser;
 
 use transport::ConnectionError;
 
-const EVENT_BUS_CAPACITY: usize = 1024;
 const COMMAND_CHANNEL_CAPACITY: usize = 256;
 const WRITE_CHANNEL_CAPACITY: usize = 256;
 
