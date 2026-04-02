@@ -21,7 +21,8 @@ const DESIRED_CAPS: &[&str] = &[
     "extended-join",
     "account-tag",
     "multi-prefix",
-    "batch",
+    // "batch" intentionally not negotiated — ZNC wraps playback in BATCH
+    // which we don't fully handle yet. Without it, ZNC sends plain PRIVMSGs.
     "labeled-response",
     "monitor",
     "sts",
