@@ -45,7 +45,7 @@ pub fn render_buffer(
         .map(|msg| format_message(msg, timestamp_format, search, theme))
         .collect();
 
-    let paragraph = Paragraph::new(lines);
+    let paragraph = Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
     frame.render_widget(paragraph, area);
 
     if scroll_offset > 0 {

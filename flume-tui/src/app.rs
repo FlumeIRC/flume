@@ -400,6 +400,8 @@ pub struct App {
     pub snotice_rules: Vec<CompiledSnoticeRule>,
     /// Raw snotice rule configs (for add/remove/save).
     pub snotice_configs: Vec<flume_core::config::formats::SnoticeRuleConfig>,
+    /// Last raw server notice text (for /snotice last).
+    pub last_raw_snotice: Option<String>,
     /// Active keybinding mode.
     pub keybinding_mode: KeybindingMode,
     /// Vi sub-mode (Normal/Insert). Only used when keybinding_mode == Vi.
@@ -484,6 +486,7 @@ impl App {
             formats,
             snotice_rules,
             snotice_configs,
+            last_raw_snotice: None,
             keybinding_mode,
             vi_mode: ViMode::Insert,
             vi_pending_op: None,
@@ -1566,6 +1569,8 @@ impl App {
                         // Server notices (from server or no nick) go to server buffer
                         // User notices go to the appropriate buffer
                         if nick.is_empty() || nick.contains('.') || *target == "*" {
+                            // Save raw text for /snotice last
+                            self.last_raw_snotice = Some(text.to_string());
                             // Server notice — check snotice routing rules
                             let mut handled = false;
                             for rule in &self.snotice_rules {

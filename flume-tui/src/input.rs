@@ -2476,8 +2476,62 @@ fn handle_snotice_command(args: &str, app: &mut App) {
                 Err(e) => app.system_message(&format!("Failed to save: {}", e)),
             }
         }
+        "test" => {
+            // Test snotice rules against a sample text
+            let test_text = parts.get(1).copied().unwrap_or("").trim();
+            if test_text.is_empty() {
+                app.system_message("Usage: /snotice test <notice text to test against>");
+                app.system_message("Paste the exact notice text (including *** Notice -- if present)");
+                return;
+            }
+            let mut matched = false;
+            for (i, rule) in app.snotice_rules.iter().enumerate() {
+                if let Some(caps) = rule.regex.captures(test_text) {
+                    let action = if rule.suppress {
+                        "SUPPRESS".to_string()
+                    } else {
+                        let formatted = match &rule.format {
+                            Some(fmt) => flume_core::format::format_regex_captures(fmt, &caps),
+                            None => test_text.to_string(),
+                        };
+                        let buf = rule.buffer.as_deref().unwrap_or("(server)");
+                        format!("MATCH → buffer=\"{}\" text=\"{}\"", buf, formatted)
+                    };
+                    app.system_message(&format!("Rule {}: {}", i + 1, action));
+                    matched = true;
+                    break;
+                }
+            }
+            if !matched {
+                app.system_message("No rules matched. The text would use default server_notice format.");
+                app.system_message(&format!("Text tested: \"{}\"", test_text));
+            }
+        }
+        "last" => {
+            // Suppress the last raw server notice
+            let last_notice = app.last_raw_snotice.clone();
+            if let Some(text) = last_notice {
+                let raw = &text;
+                // Escape regex special chars for a literal match
+                let escaped = regex::escape(raw);
+                if regex::Regex::new(&escaped).is_ok() {
+                    let rule = flume_core::config::formats::SnoticeRuleConfig {
+                        pattern: escaped.clone(),
+                        format: None,
+                        buffer: None,
+                        suppress: true,
+                    };
+                    app.snotice_configs.push(rule);
+                    app.snotice_rules = crate::app::compile_snotice_rules(&app.snotice_configs);
+                    app.system_message(&format!("Suppressed: {}", &raw[..raw.len().min(60)]));
+                    app.system_message("Use /snotice save to persist");
+                }
+            } else {
+                app.system_message("No recent server notice found in this buffer");
+            }
+        }
         _ => {
-            app.system_message("Usage: /snotice add|list|remove|save");
+            app.system_message("Usage: /snotice add|list|remove|save|test|last");
         }
     }
 }
