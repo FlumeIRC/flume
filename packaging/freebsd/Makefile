@@ -16,11 +16,7 @@ GH_ACCOUNT=	FlumeIRC
 CARGO_BUILD_ARGS=	-p flume-tui
 CARGO_INSTALL_PATH=	flume-tui
 
-PLIST_FILES=	bin/flume \
-		man/man1/flume.1.gz
-
 post-install:
 	${INSTALL_MAN} ${WRKSRC}/doc/flume.1 ${STAGEDIR}${PREFIX}/man/man1
-	
 
 .include <bsd.port.mk>

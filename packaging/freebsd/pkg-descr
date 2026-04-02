@@ -1,0 +1,9 @@
+Flume is a fast, modern, terminal-based IRC client built in Rust.
+
+Features include multi-server connections, a rich TUI with theming and
+split views, vi/emacs keybinding modes, Lua and Python scripting,
+LLM-powered script and theme generation, DCC file transfers, XDCC,
+emoji shortcodes, configurable display formats, and encrypted vault
+for credentials.
+
+WWW: https://github.com/FlumeIRC/flume
