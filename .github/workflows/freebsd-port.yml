@@ -11,6 +11,9 @@ on:
       version:
         required: true
         type: string
+    secrets:
+      FREEBSD_BUGZILLA_API_KEY:
+        required: false
 
 jobs:
   update-port:
@@ -34,7 +37,6 @@ jobs:
       - name: Generate shar archive
         run: |
           cd packaging/freebsd
-          # Create portable shar archive
           {
             echo '#!/bin/sh'
             echo '# Shell archive for FreeBSD port: irc/flume'
@@ -61,3 +63,78 @@ jobs:
           gh release upload "$TAG" flume-port.shar --clobber || echo "Release $TAG not found, skipping upload"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Submit or update FreeBSD Bugzilla
+        if: secrets.FREEBSD_BUGZILLA_API_KEY != ''
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          API_KEY="${{ secrets.FREEBSD_BUGZILLA_API_KEY }}"
+          BUGZILLA="https://bugs.freebsd.org/bugzilla/rest"
+          SHAR_B64=$(base64 -w0 flume-port.shar)
+
+          # Search for existing flume port bug
+          EXISTING=$(curl -s "${BUGZILLA}/bug?api_key=${API_KEY}&product=Ports%20%26%20Packages&component=Individual%20Port(s)&summary=irc%2Fflume&resolution=---" \
+            | jq -r '.bugs[0].id // empty')
+
+          if [ -n "$EXISTING" ]; then
+            echo "Found existing bug #${EXISTING}, adding updated shar..."
+
+            # Add comment
+            curl -s -X POST "${BUGZILLA}/bug/${EXISTING}/comment" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"api_key\": \"${API_KEY}\",
+                \"comment\": \"Updated port for version ${VERSION}.\"
+              }"
+
+            # Attach updated shar
+            curl -s -X POST "${BUGZILLA}/bug/${EXISTING}/attachment" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"api_key\": \"${API_KEY}\",
+                \"ids\": [${EXISTING}],
+                \"data\": \"${SHAR_B64}\",
+                \"file_name\": \"flume-port-${VERSION}.shar\",
+                \"summary\": \"shar for irc/flume ${VERSION}\",
+                \"content_type\": \"application/x-shar\"
+              }"
+
+            echo "Updated bug #${EXISTING} with v${VERSION} shar"
+          else
+            echo "Creating new port submission bug..."
+
+            RESULT=$(curl -s -X POST "${BUGZILLA}/bug" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"api_key\": \"${API_KEY}\",
+                \"product\": \"Ports & Packages\",
+                \"component\": \"Individual Port(s)\",
+                \"version\": \"Latest\",
+                \"summary\": \"[NEW PORT] irc/flume: Modern terminal IRC client\",
+                \"description\": \"New port: irc/flume\\n\\nFlume is a fast, modern, terminal-based IRC client built in Rust.\\nMulti-server, IRCv3, Lua/Python scripting, theming, split views,\\nDCC, LLM generation, emoji shortcodes.\\n\\nHomepage: https://github.com/FlumeIRC/flume\\nLicense: Apache-2.0\\nVersion: ${VERSION}\",
+                \"keywords\": [\"new-port\"],
+                \"severity\": \"enhancement\"
+              }")
+
+            BUG_ID=$(echo "$RESULT" | jq -r '.id // empty')
+
+            if [ -n "$BUG_ID" ]; then
+              echo "Created bug #${BUG_ID}, attaching shar..."
+
+              curl -s -X POST "${BUGZILLA}/bug/${BUG_ID}/attachment" \
+                -H "Content-Type: application/json" \
+                -d "{
+                  \"api_key\": \"${API_KEY}\",
+                  \"ids\": [${BUG_ID}],
+                  \"data\": \"${SHAR_B64}\",
+                  \"file_name\": \"flume-port-${VERSION}.shar\",
+                  \"summary\": \"shar for irc/flume ${VERSION}\",
+                  \"content_type\": \"application/x-shar\"
+                }"
+
+              echo "Submitted new port bug #${BUG_ID}"
+            else
+              echo "Failed to create bug: $RESULT"
+              exit 1
+            fi
+          fi

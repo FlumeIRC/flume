@@ -169,3 +169,5 @@ jobs:
     uses: ./.github/workflows/freebsd-port.yml
     with:
       version: ${{ github.ref_name }}
+    secrets:
+      FREEBSD_BUGZILLA_API_KEY: ${{ secrets.FREEBSD_BUGZILLA_API_KEY }}
