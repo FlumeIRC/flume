@@ -228,6 +228,12 @@ async fn execute_action(
         InputAction::ServerCycle => {
             app.cycle_server();
         }
+        InputAction::ServerJump(n) => {
+            let idx = (n as usize) - 1;
+            if let Some(name) = app.server_order.get(idx).cloned() {
+                app.switch_server(&name);
+            }
+        }
 
         // App control
         InputAction::Quit => {
@@ -1799,8 +1805,9 @@ fn show_help(app: &mut App) {
     app.system_message("    /clear                   — Clear active buffer");
     app.system_message("    /search <pattern>        — Search buffer (no args = clear)");
     app.system_message("    Ctrl+X                   — Cycle servers");
+    app.system_message("    Alt+Shift+1-9            — Jump to server by number");
     app.system_message("    Alt+Left/Right           — Cycle buffers");
-    app.system_message("    Alt+1-9                  — Jump to buffer by number");
+    app.system_message("    Alt+1-9, Alt+0           — Jump to buffer by number");
     app.system_message("  Connection:");
     app.system_message("    /connect <name>          — Connect to a network");
     app.system_message("    /disconnect              — Disconnect active server");
@@ -1900,12 +1907,15 @@ fn show_help_topic(topic: &str, app: &mut App) {
         }
         "go" => {
             app.system_message("/go <name or number>");
-            app.system_message("  Jump to a buffer by number (1-indexed) or name.");
-            app.system_message("  Supports partial/substring matching on names.");
-            app.system_message("  Also matches server names for cross-server switching.");
-            app.system_message("  Example: /go 3        — jump to window 3");
-            app.system_message("  Example: /go #rust    — jump to #rust");
-            app.system_message("  Example: /go rust     — fuzzy match #rust");
+            app.system_message("  Jump to a buffer by number, name, or server name.");
+            app.system_message("  Supports partial/substring matching.");
+            app.system_message("");
+            app.system_message("  /go 3        — jump to buffer #3");
+            app.system_message("  /go #rust    — jump to #rust");
+            app.system_message("  /go rust     — fuzzy match #rust");
+            app.system_message("  /go efnet    — switch to EFNet server");
+            app.system_message("  /go libera   — switch to Libera Chat");
+            app.system_message("  /go flume    — switch to global flume buffer");
         }
         "switch" => {
             app.system_message("/switch <server>");
@@ -2172,6 +2182,7 @@ fn show_keybindings(app: &mut App) {
     app.system_message("  Global (all modes):");
     app.system_message("    Ctrl+C             — Quit");
     app.system_message("    Ctrl+X             — Cycle servers");
+    app.system_message("    Alt+Shift+1-9      — Jump to server by number");
     app.system_message("    Alt+1-9            — Jump to buffer");
     app.system_message("    Alt+Left/Right     — Cycle buffers");
     app.system_message("    PageUp/Down        — Scroll");

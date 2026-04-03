@@ -71,6 +71,7 @@ pub enum InputAction {
     BufferPrev,
     BufferJump(u8),
     ServerCycle,
+    ServerJump(u8),
     // App
     Quit,
     SwapSplitFocus,
@@ -111,6 +112,16 @@ fn global_bindings() -> HashMap<KeyCombo, InputAction> {
     m.insert(KeyCombo::alt_char('0'), InputAction::BufferJump(10));
     m.insert(KeyCombo::alt(KeyCode::Left), InputAction::BufferPrev);
     m.insert(KeyCombo::alt(KeyCode::Right), InputAction::BufferNext);
+
+    // Server navigation (Alt+Shift+1-9 = servers 1-9)
+    // Shifted number keys produce !@#$%^&*( on US layout
+    let shifted_nums = ['!', '@', '#', '$', '%', '^', '&', '*', '('];
+    for (i, &ch) in shifted_nums.iter().enumerate() {
+        m.insert(
+            KeyCombo::alt_char(ch),
+            InputAction::ServerJump((i + 1) as u8),
+        );
+    }
 
     // Split focus
     m.insert(KeyCombo::alt(KeyCode::Tab), InputAction::SwapSplitFocus);
