@@ -60,15 +60,20 @@ jobs:
       - name: Attach to release
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          gh release upload "$TAG" flume-port.shar --clobber || echo "Release $TAG not found, skipping upload"
+          # Wait briefly for release to be fully available
+          sleep 5
+          gh release upload "$TAG" flume-port.shar --clobber 2>&1 || echo "Could not attach to release (may be immutable), shar is available as workflow artifact"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Submit or update FreeBSD Bugzilla
-        if: secrets.FREEBSD_BUGZILLA_API_KEY != ''
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           API_KEY="${{ secrets.FREEBSD_BUGZILLA_API_KEY }}"
+          if [ -z "$API_KEY" ]; then
+            echo "FREEBSD_BUGZILLA_API_KEY not set, skipping Bugzilla submission"
+            exit 0
+          fi
+          VERSION="${{ steps.version.outputs.version }}"
           BUGZILLA="https://bugs.freebsd.org/bugzilla/rest"
           SHAR_B64=$(base64 -w0 flume-port.shar)
 
