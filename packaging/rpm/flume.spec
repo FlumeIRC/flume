@@ -1,5 +1,5 @@
 Name:           flume
-Version:        1.2.3
+Version:        1.2.4
 Release:        1%{?dist}
 Summary:        Modern terminal IRC client
 License:        Apache-2.0
@@ -36,6 +36,15 @@ install -Dm644 LICENSE %{buildroot}%{_licensedir}/%{name}/LICENSE
 %{_mandir}/man1/flume.1*
 
 %changelog
+* Thu Apr 03 2026 Emilio A. Escobar <emilio@flumeirc.io> - 1.2.4-1
+- Fix Alt+number buffer switching to match displayed order
+- Fix active buffer not visually distinct in buffer list
+- Alt+0 jumps to buffer 10 (weechat convention)
+- /snotice last is now per-server
+- FreeBSD x86_64 binary in release builds
+- Automated AUR and Homebrew publishing
+- CI badges in README
+
 * Wed Apr 02 2026 Emilio A. Escobar <emilio@flumeirc.io> - 1.2.3-1
 - User-defined color combinations (%rainbow%, %alert%, cycle combos)
 - /color combo add|list|remove|test commands
