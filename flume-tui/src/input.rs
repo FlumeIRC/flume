@@ -2766,7 +2766,9 @@ fn handle_snotice_command(args: &str, app: &mut App) {
             // Show and suppress the last server/global notice.
             // Falls back to searching the active buffer for server messages.
             let rest = parts.get(1).copied().unwrap_or("").trim();
-            let last_notice = app.last_raw_snotice.clone().or_else(|| {
+            let last_notice = app.active_server_state()
+                .and_then(|ss| ss.last_raw_snotice.clone())
+                .or_else(|| {
                 app.active_messages().iter().rev()
                     .find(|m| matches!(m.source, MessageSource::Server))
                     .map(|m| {
@@ -2826,7 +2828,9 @@ fn handle_snotice_command(args: &str, app: &mut App) {
                     app.system_message("Usage: /snotice last [suppress|route <buffer>|show]");
                 }
                 // Keep raw text for follow-up commands
-                app.last_raw_snotice = Some(text);
+                if let Some(ss) = app.active_server_state_mut() {
+                    ss.last_raw_snotice = Some(text);
+                }
             } else {
                 app.system_message("No recent server notice found");
                 app.system_message("Try switching to the server buffer first");
