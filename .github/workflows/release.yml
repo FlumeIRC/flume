@@ -25,6 +25,10 @@ jobs:
             os: ubuntu-latest
             name: flume-aarch64-unknown-linux-gnu
             use_cross: true
+          - target: x86_64-unknown-freebsd
+            os: ubuntu-latest
+            name: flume-x86_64-unknown-freebsd
+            use_cross: true
 
     runs-on: ${{ matrix.os }}
     steps:
