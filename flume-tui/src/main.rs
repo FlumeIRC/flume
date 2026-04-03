@@ -88,6 +88,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             combos.extend(flume_config.combos.combos.clone());
             combos
         },
+        flume_config.aliases.clone(),
+        flume_config.ui.mouse,
     );
     app.irc_config = irc_config;
     app.active_theme = flume_config.ui.theme.clone();
@@ -184,6 +186,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }));
 
     let mut terminal = ratatui::init();
+
+    // Enable mouse capture if configured
+    if app.mouse_enabled {
+        crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture).ok();
+    }
 
     // Spawn crossterm event reader
     let (term_tx, mut term_rx) = mpsc::channel(100);
@@ -486,6 +493,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(event) = term_rx.recv() => {
                 input::handle_input(&mut app, event, &mut vault).await;
 
+                // Apply mouse capture state change
+                if app.mouse_changed {
+                    if app.mouse_enabled {
+                        crossterm::execute!(std::io::stdout(), crossterm::event::EnableMouseCapture).ok();
+                    } else {
+                        crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture).ok();
+                    }
+                    app.mouse_changed = false;
+                }
+
                 // Check if vault was just unlocked — spawn initial connections
                 if app.vault_unlocked && !initial_connections_spawned && has_servers {
                     for name in &servers_to_connect {
@@ -729,11 +746,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Render after every event — ensures display is always current
-        terminal.draw(|frame| ui::render(frame, &app, &theme))?;
+        terminal.draw(|frame| ui::render(frame, &mut app, &theme))?;
         last_render = Instant::now();
     }
 
     logger.flush();
+    crossterm::execute!(std::io::stdout(), crossterm::event::DisableMouseCapture).ok();
     ratatui::restore();
     tracing::info!("Flume exiting");
     Ok(())

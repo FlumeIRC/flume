@@ -33,6 +33,14 @@ pub async fn handle_input(
     event: Event,
     vault: &mut Option<Vault>,
 ) {
+    // Handle mouse events
+    if let Event::Mouse(mouse_event) = event {
+        if app.mouse_enabled {
+            handle_mouse_event(app, mouse_event);
+        }
+        return;
+    }
+
     let Event::Key(key_event) = event else {
         return;
     };
@@ -555,7 +563,18 @@ async fn process_input(
             None => (rest, ""),
         };
 
-        match cmd.to_lowercase().as_str() {
+        // Check user-defined aliases before built-in commands
+        let cmd_lower = cmd.to_lowercase();
+        if let Some(expansion) = app.aliases.get(&cmd_lower).cloned() {
+            let expanded = if args.is_empty() {
+                expansion
+            } else {
+                format!("{} {}", expansion, args)
+            };
+            return Box::pin(process_input(&expanded, app, vault)).await;
+        }
+
+        match cmd_lower.as_str() {
             "join" | "j" => {
                 if args.is_empty() {
                     app.system_message("Usage: /join <channel> [key]");
@@ -1149,6 +1168,21 @@ async fn process_input(
                     config.insert("combos".to_string(), combos_value);
                 }
 
+                // Update aliases section
+                if !app.aliases.is_empty() {
+                    let aliases_table: toml::Table = app.aliases.iter()
+                        .map(|(k, v)| (k.clone(), toml::Value::String(v.clone())))
+                        .collect();
+                    config.insert("aliases".to_string(), toml::Value::Table(aliases_table));
+                } else {
+                    config.remove("aliases");
+                }
+
+                // Update mouse setting
+                if let Some(toml::Value::Table(ref mut t)) = config.get_mut("ui") {
+                    t.insert("mouse".to_string(), toml::Value::Boolean(app.mouse_enabled));
+                }
+
                 let _ = std::fs::create_dir_all(flume_core::config::config_dir());
                 match toml::to_string_pretty(&config) {
                     Ok(toml_str) => {
@@ -1356,6 +1390,32 @@ async fn process_input(
             }
             "snotice" => {
                 handle_snotice_command(args, app);
+            }
+            "alias" => {
+                handle_alias_command(args, app);
+            }
+            "mouse" => {
+                match args.trim() {
+                    "enable" | "on" => {
+                        app.mouse_enabled = true;
+                        app.mouse_changed = true;
+                        app.system_message("Mouse support enabled");
+                    }
+                    "disable" | "off" => {
+                        app.mouse_enabled = false;
+                        app.mouse_changed = true;
+                        app.system_message("Mouse support disabled");
+                    }
+                    "" => {
+                        let state = if app.mouse_enabled { "enabled" } else { "disabled" };
+                        app.system_message(&format!("Mouse support: {}", state));
+                        app.system_message("  /mouse enable  — enable mouse (click buffers, scroll)");
+                        app.system_message("  /mouse disable — disable mouse");
+                    }
+                    _ => {
+                        app.system_message("Usage: /mouse enable|disable");
+                    }
+                }
             }
             "generate" | "gen" => {
                 handle_generate_command(args, app);
@@ -1771,6 +1831,8 @@ fn show_help(app: &mut App) {
     app.system_message("    /color <name> <text>     — Send colored text");
     app.system_message("    /color combo list|add|rm — Manage color combos");
     app.system_message("    /colors                  — Show available colors");
+    app.system_message("    /alias [name] [cmd]      — Manage command aliases");
+    app.system_message("    /mouse enable|disable    — Toggle mouse support");
     app.system_message("    /set [key] [value]       — View or change settings");
     app.system_message("    /quote <raw line>        — Send raw IRC line");
     app.system_message("    /go <name or number>     — Jump to buffer/server");
@@ -2025,6 +2087,31 @@ fn show_help_topic(topic: &str, app: &mut App) {
         "colors" | "colours" => {
             app.system_message("/colors");
             app.system_message("  Show all available color names with previews.");
+        }
+        "alias" => {
+            app.system_message("/alias [name] [command]");
+            app.system_message("  Create command aliases (shortcuts for longer commands).");
+            app.system_message("");
+            app.system_message("  /alias                     — list all aliases");
+            app.system_message("  /alias <name> <command>    — create or update alias");
+            app.system_message("  /alias remove <name>       — remove an alias");
+            app.system_message("");
+            app.system_message("  Examples:");
+            app.system_message("    /alias ns /msg nickserv@services.network.net");
+            app.system_message("    /alias cs /msg chanserv@services.network.net");
+            app.system_message("    /alias wc /close");
+            app.system_message("  Then: /ns identify mypassword");
+            app.system_message("  Use /save to persist aliases across sessions.");
+        }
+        "mouse" => {
+            app.system_message("/mouse [enable|disable]");
+            app.system_message("  Toggle mouse support.");
+            app.system_message("");
+            app.system_message("  /mouse enable  — click buffers to switch, scroll chat");
+            app.system_message("  /mouse disable — turn off mouse capture");
+            app.system_message("  /mouse         — show current state");
+            app.system_message("");
+            app.system_message("  Persisted via /save (or set ui.mouse in config.toml).");
         }
         "set" => {
             app.system_message("/set [section.key] [value]");
@@ -2463,6 +2550,123 @@ fn handle_generate_init_input(text: &str, step: u8, app: &mut App) {
         }
         _ => {
             app.generate_init_step = None;
+        }
+    }
+}
+
+fn handle_mouse_event(app: &mut App, event: crossterm::event::MouseEvent) {
+    use crossterm::event::{MouseEventKind, MouseButton};
+
+    match event.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            let x = event.column;
+            let y = event.row;
+            let area = app.buffer_list_area;
+
+            // Check if click is within the buffer list area
+            if x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height {
+                let rel_y = (y - area.y) as usize;
+                if rel_y == 0 {
+                    // Click on "flume" global buffer
+                    app.viewing_global = true;
+                } else if rel_y == 1 {
+                    // Click on server header → switch to server buffer
+                    app.viewing_global = false;
+                    if let Some(ss) = app.active_server_state_mut() {
+                        ss.switch_buffer("");
+                    }
+                } else {
+                    // Click on a channel/PM buffer
+                    app.viewing_global = false;
+                    let buf_idx = rel_y - 2;
+                    if let Some(ss) = app.active_server_state_mut() {
+                        let sorted = ss.sorted_buffers();
+                        if let Some(name) = sorted.get(buf_idx).cloned() {
+                            ss.switch_buffer(&name);
+                        }
+                    }
+                }
+            }
+        }
+        MouseEventKind::ScrollUp => {
+            let x = event.column;
+            let y = event.row;
+            let area = app.chat_area;
+            if x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height {
+                // Scroll up in chat
+                if let Some(ss) = app.active_server_state_mut() {
+                    let buf = ss.active_buf_mut();
+                    buf.scroll_offset = buf.scroll_offset.saturating_add(3);
+                }
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            let x = event.column;
+            let y = event.row;
+            let area = app.chat_area;
+            if x >= area.x && x < area.x + area.width && y >= area.y && y < area.y + area.height {
+                // Scroll down in chat
+                if let Some(ss) = app.active_server_state_mut() {
+                    let buf = ss.active_buf_mut();
+                    buf.scroll_offset = buf.scroll_offset.saturating_sub(3);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_alias_command(args: &str, app: &mut App) {
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    let subcmd = parts.first().copied().unwrap_or("");
+
+    if subcmd.is_empty() {
+        // /alias — list all
+        if app.aliases.is_empty() {
+            app.system_message("No aliases defined");
+            app.system_message("Usage: /alias <name> <command>");
+            app.system_message("  Example: /alias ns /msg nickserv@services.network.net");
+        } else {
+            let mut names: Vec<String> = app.aliases.keys().cloned().collect();
+            names.sort();
+            let lines: Vec<String> = names.iter()
+                .map(|n| format!("  /{} = {}", n, app.aliases[n]))
+                .collect();
+            app.system_message("Aliases:");
+            for line in &lines {
+                app.system_message(line);
+            }
+        }
+    } else if subcmd == "remove" || subcmd == "rm" || subcmd == "del" {
+        let name = parts.get(1).copied().unwrap_or("").trim().to_lowercase();
+        if name.is_empty() {
+            app.system_message("Usage: /alias remove <name>");
+        } else if app.aliases.remove(&name).is_some() {
+            app.system_message(&format!("Removed alias: /{}", name));
+            app.system_message("Use /save to persist");
+        } else {
+            app.system_message(&format!("No alias named '{}'. See /alias", name));
+        }
+    } else {
+        // /alias <name> <expansion>
+        let name = subcmd.to_lowercase();
+        let expansion = parts.get(1).copied().unwrap_or("").trim();
+        if expansion.is_empty() {
+            // Show single alias
+            if let Some(exp) = app.aliases.get(&name) {
+                app.system_message(&format!("/{} = {}", name, exp));
+            } else {
+                app.system_message(&format!("No alias named '{}'. Use /alias <name> <command> to create", name));
+            }
+        } else {
+            let expansion = if expansion.starts_with('/') {
+                expansion.to_string()
+            } else {
+                format!("/{}", expansion)
+            };
+            app.aliases.insert(name.clone(), expansion.clone());
+            app.system_message(&format!("Alias set: /{} = {}", name, expansion));
+            app.system_message("Use /save to persist");
         }
     }
 }

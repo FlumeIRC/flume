@@ -19,7 +19,7 @@ use crate::app::{App, GenerationKind};
 use crate::split::SplitDirection;
 use crate::theme::Theme;
 
-pub fn render(frame: &mut Frame, app: &App, theme: &Theme) {
+pub fn render(frame: &mut Frame, app: &mut App, theme: &Theme) {
     // Layout:
     //   [buffer_list (full height) | center area | nick_list (full height)]
     //   status_bar (1 line, full width)
@@ -66,6 +66,7 @@ pub fn render(frame: &mut Frame, app: &App, theme: &Theme) {
 
     // Buffer list (left column, full height)
     if show_buffer_list {
+        app.buffer_list_area = columns[col_idx];
         buffer_list::render(frame, columns[col_idx], app, theme);
         col_idx += 1;
     }
@@ -88,6 +89,7 @@ pub fn render(frame: &mut Frame, app: &App, theme: &Theme) {
         .split(center_area);
 
     topic_bar::render(frame, center[0], app, theme);
+    app.chat_area = center[1];
 
     if let Some(ref gen) = app.pending_generation {
         // Generation preview: chat | separator | preview

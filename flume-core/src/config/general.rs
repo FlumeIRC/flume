@@ -27,6 +27,8 @@ pub struct FlumeConfig {
     pub formats: FormatsConfig,
     #[serde(default)]
     pub combos: CombosConfig,
+    #[serde(default)]
+    pub aliases: std::collections::HashMap<String, String>,
 }
 
 impl Default for FlumeConfig {
@@ -41,6 +43,7 @@ impl Default for FlumeConfig {
             dcc: DccConfig::default(),
             formats: FormatsConfig::default(),
             combos: CombosConfig::default(),
+            aliases: std::collections::HashMap::new(),
         }
     }
 }
@@ -106,6 +109,9 @@ pub struct UiConfig {
     /// Show user@host in join messages. Default true.
     #[serde(default = "default_true")]
     pub show_hostmask_on_join: bool,
+    /// Enable mouse support (click buffers, scroll). Default false.
+    #[serde(default)]
+    pub mouse: bool,
 }
 
 impl Default for UiConfig {
@@ -122,6 +128,7 @@ impl Default for UiConfig {
             keybindings: KeybindingsConfig::default(),
             show_join_part: true,
             show_hostmask_on_join: true,
+            mouse: false,
         }
     }
 }

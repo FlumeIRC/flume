@@ -445,6 +445,16 @@ pub struct App {
     pub dcc_chat_senders: HashMap<u64, tokio::sync::mpsc::Sender<String>>,
     /// User-defined color combos (runtime copy, persisted via /save).
     pub combos: std::collections::HashMap<String, flume_core::config::combos::ComboDefinition>,
+    /// User-defined command aliases (runtime copy, persisted via /save).
+    pub aliases: std::collections::HashMap<String, String>,
+    /// Mouse support enabled.
+    pub mouse_enabled: bool,
+    /// Flag: mouse state changed, main loop should apply.
+    pub mouse_changed: bool,
+    /// Buffer list area from last render (for mouse hit testing).
+    pub buffer_list_area: ratatui::layout::Rect,
+    /// Chat area from last render (for mouse scroll).
+    pub chat_area: ratatui::layout::Rect,
     // Global buffer for messages when no server is active
     global_messages: VecDeque<DisplayMessage>,
 }
@@ -472,6 +482,8 @@ impl App {
         show_hostmask_on_join: bool,
         formats: FormatsConfig,
         combos: std::collections::HashMap<String, flume_core::config::combos::ComboDefinition>,
+        aliases: std::collections::HashMap<String, String>,
+        mouse_enabled: bool,
     ) -> Self {
         // Load snotice rules from file, merge with any in [formats] config
         let mut snotice_configs = flume_core::config::load_snotice_rules();
@@ -517,6 +529,11 @@ impl App {
             dcc_command: None,
             dcc_chat_senders: HashMap::new(),
             combos,
+            aliases,
+            mouse_enabled,
+            mouse_changed: false,
+            buffer_list_area: ratatui::layout::Rect::default(),
+            chat_area: ratatui::layout::Rect::default(),
             global_messages: VecDeque::new(),
         }
     }
