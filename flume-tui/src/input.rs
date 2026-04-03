@@ -572,7 +572,10 @@ async fn process_input(
         // Check user-defined aliases before built-in commands
         let cmd_lower = cmd.to_lowercase();
         if let Some(expansion) = app.aliases.get(&cmd_lower).cloned() {
-            let expanded = if args.is_empty() {
+            let expanded = if expansion.contains("$*") {
+                // $* is replaced with all args (no extra space)
+                expansion.replace("$*", args)
+            } else if args.is_empty() {
                 expansion
             } else {
                 format!("{} {}", expansion, args)
