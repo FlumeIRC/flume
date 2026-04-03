@@ -135,6 +135,38 @@ pub fn parse_irc_format(text: &str) -> Vec<FormattedSpan> {
                     }
                 }
             }
+            0x1b => {
+                // ANSI escape: ESC[ params m
+                if i + 1 < len && bytes[i + 1] == b'[' {
+                    if !current.is_empty() {
+                        spans.push(FormattedSpan {
+                            text: std::mem::take(&mut current),
+                            bold, italic, underline, reverse, fg, bg,
+                        });
+                    }
+                    i += 2; // skip ESC[
+                    // Collect params until 'm'
+                    let param_start = i;
+                    while i < len && bytes[i] != b'm' && bytes[i] != b'H' && bytes[i] != b'J' && bytes[i] != b'K' {
+                        i += 1;
+                    }
+                    if i < len && bytes[i] == b'm' {
+                        let params_str = std::str::from_utf8(&bytes[param_start..i]).unwrap_or("");
+                        let params: Vec<u8> = params_str
+                            .split(';')
+                            .filter_map(|s| s.parse::<u8>().ok())
+                            .collect();
+                        apply_ansi_params(&params, &mut bold, &mut italic, &mut underline, &mut reverse, &mut fg, &mut bg);
+                        i += 1; // skip 'm'
+                    } else {
+                        // Non-SGR escape — skip the terminator
+                        if i < len { i += 1; }
+                    }
+                } else {
+                    current.push(bytes[i] as char);
+                    i += 1;
+                }
+            }
             _ => {
                 current.push(bytes[i] as char);
                 i += 1;
@@ -150,6 +182,74 @@ pub fn parse_irc_format(text: &str) -> Vec<FormattedSpan> {
     }
 
     spans
+}
+
+/// Apply ANSI SGR parameters to formatting state.
+fn apply_ansi_params(
+    params: &[u8],
+    bold: &mut bool,
+    italic: &mut bool,
+    underline: &mut bool,
+    reverse: &mut bool,
+    fg: &mut Option<u8>,
+    bg: &mut Option<u8>,
+) {
+    if params.is_empty() || (params.len() == 1 && params[0] == 0) {
+        // Reset all
+        *bold = false;
+        *italic = false;
+        *underline = false;
+        *reverse = false;
+        *fg = None;
+        *bg = None;
+        return;
+    }
+    for &p in params {
+        match p {
+            0 => {
+                *bold = false; *italic = false; *underline = false; *reverse = false;
+                *fg = None; *bg = None;
+            }
+            1 => *bold = true,
+            3 => *italic = true,
+            4 => *underline = true,
+            7 => *reverse = true,
+            22 => *bold = false,
+            23 => *italic = false,
+            24 => *underline = false,
+            27 => *reverse = false,
+            // Standard foreground colors (30-37) → mIRC approximate
+            30 => *fg = Some(1),  // black
+            31 => *fg = Some(4),  // red
+            32 => *fg = Some(3),  // green
+            33 => *fg = Some(8),  // yellow
+            34 => *fg = Some(2),  // blue
+            35 => *fg = Some(6),  // magenta
+            36 => *fg = Some(10), // cyan
+            37 => *fg = Some(0),  // white
+            39 => *fg = None,     // default fg
+            // Standard background colors (40-47) → mIRC approximate
+            40 => *bg = Some(1),  // black
+            41 => *bg = Some(4),  // red
+            42 => *bg = Some(3),  // green
+            43 => *bg = Some(8),  // yellow
+            44 => *bg = Some(2),  // blue
+            45 => *bg = Some(6),  // magenta
+            46 => *bg = Some(10), // cyan
+            47 => *bg = Some(0),  // white
+            49 => *bg = None,     // default bg
+            // Bright foreground (90-97)
+            90 => *fg = Some(14), // dark gray
+            91 => *fg = Some(4),  // light red
+            92 => *fg = Some(9),  // light green
+            93 => *fg = Some(8),  // light yellow
+            94 => *fg = Some(12), // light blue
+            95 => *fg = Some(13), // light magenta
+            96 => *fg = Some(11), // light cyan
+            97 => *fg = Some(15), // bright white
+            _ => {} // ignore unknown
+        }
+    }
 }
 
 /// Strip all IRC formatting codes from text, returning plain text.
@@ -172,6 +272,16 @@ pub fn strip_formatting(text: &str) -> String {
                     i += 1;
                     let start = i;
                     while i < len && i - start < 2 && bytes[i].is_ascii_digit() { i += 1; }
+                }
+            }
+            0x1b => {
+                // Skip ANSI escape sequences
+                if i + 1 < len && bytes[i + 1] == b'[' {
+                    i += 2;
+                    while i < len && !bytes[i].is_ascii_alphabetic() { i += 1; }
+                    if i < len { i += 1; } // skip terminator
+                } else {
+                    i += 1;
                 }
             }
             b => {

@@ -199,6 +199,22 @@ fn has_background_colors(text: &str) -> bool {
             if i < len && bytes[i] == b',' {
                 return true;
             }
+        } else if bytes[i] == 0x1b && i + 1 < len && bytes[i + 1] == b'[' {
+            // ANSI escape: check for background color (40-47, 49, 100-107)
+            i += 2;
+            let param_start = i;
+            while i < len && bytes[i] != b'm' && bytes[i].is_ascii_graphic() { i += 1; }
+            if i < len && bytes[i] == b'm' {
+                let params = std::str::from_utf8(&bytes[param_start..i]).unwrap_or("");
+                for p in params.split(';') {
+                    if let Ok(n) = p.parse::<u16>() {
+                        if (40..=47).contains(&n) || (100..=107).contains(&n) {
+                            return true;
+                        }
+                    }
+                }
+                i += 1;
+            }
         } else {
             i += 1;
         }
