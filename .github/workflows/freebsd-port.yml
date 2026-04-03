@@ -1,0 +1,63 @@
+name: FreeBSD Port
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v1.2.3)'
+        required: true
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+
+jobs:
+  update-port:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          TAG="${{ inputs.version || github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Update port Makefile version
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s/^DISTVERSION=.*/DISTVERSION=\t${VERSION}/" packaging/freebsd/Makefile
+
+      - name: Generate shar archive
+        run: |
+          cd packaging/freebsd
+          # Create portable shar archive
+          {
+            echo '#!/bin/sh'
+            echo '# Shell archive for FreeBSD port: irc/flume'
+            echo '# Extract with: sh flume-port.shar'
+            echo ''
+            for f in Makefile pkg-descr pkg-plist; do
+              echo "echo x - $f"
+              echo "sed 's/^X//' > '$f' << 'SHAR_END_$f'"
+              sed 's/^/X/' "$f"
+              echo "SHAR_END_$f"
+            done
+          } > ../../flume-port.shar
+          echo "Generated flume-port.shar"
+
+      - name: Upload shar archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: freebsd-port
+          path: flume-port.shar
+
+      - name: Attach to release
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          gh release upload "$TAG" flume-port.shar --clobber || echo "Release $TAG not found, skipping upload"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

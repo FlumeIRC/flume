@@ -159,3 +159,9 @@ jobs:
       version: ${{ github.ref_name }}
     secrets:
       AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+
+  freebsd-port:
+    needs: [release]
+    uses: ./.github/workflows/freebsd-port.yml
+    with:
+      version: ${{ github.ref_name }}
