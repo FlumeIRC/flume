@@ -129,18 +129,40 @@ jobs:
           cp dists/stable/main/binary-amd64/Packages dists/stable/main/binary-arm64/Packages
           cp dists/stable/main/binary-amd64/Packages.gz dists/stable/main/binary-arm64/Packages.gz
 
-          # Generate Release file
+          # Generate Release file with proper hashes
           cd dists/stable
-          cat > Release <<RELEASE
+
+          # Generate the base Release header
+          cat > Release <<EOF
           Origin: FlumeIRC
           Label: FlumeIRC
           Suite: stable
           Codename: stable
+          Date: $(date -Ru)
           Architectures: amd64 arm64
           Components: main
           Description: Flume IRC client packages
-          RELEASE
+          EOF
           sed -i 's/^          //' Release
+
+          # Add MD5Sum and SHA256 hashes for all index files
+          echo "MD5Sum:" >> Release
+          for f in main/binary-amd64/Packages main/binary-amd64/Packages.gz main/binary-arm64/Packages main/binary-arm64/Packages.gz; do
+            if [ -f "$f" ]; then
+              SIZE=$(wc -c < "$f" | tr -d ' ')
+              MD5=$(md5sum "$f" | awk '{print $1}')
+              printf " %s %16d %s\n" "$MD5" "$SIZE" "$f" >> Release
+            fi
+          done
+
+          echo "SHA256:" >> Release
+          for f in main/binary-amd64/Packages main/binary-amd64/Packages.gz main/binary-arm64/Packages main/binary-arm64/Packages.gz; do
+            if [ -f "$f" ]; then
+              SIZE=$(wc -c < "$f" | tr -d ' ')
+              SHA=$(sha256sum "$f" | awk '{print $1}')
+              printf " %s %16d %s\n" "$SHA" "$SIZE" "$f" >> Release
+            fi
+          done
 
           # Sign Release file
           gpg --batch --yes --armor --detach-sign -o Release.gpg Release
