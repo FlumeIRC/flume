@@ -93,36 +93,35 @@ License: Apache-2.0"
           fi
           VERSION="${{ steps.version.outputs.version }}"
           BUGZILLA="https://bugs.freebsd.org/bugzilla/rest"
-          SHAR_B64=$(base64 -w0 flume-port.shar)
+          PATCH_B64=$(base64 -w0 flume-freebsd-port.patch)
 
           # Search for existing flume port bug
           EXISTING=$(curl -s "${BUGZILLA}/bug?api_key=${API_KEY}&product=Ports%20%26%20Packages&component=Individual%20Port(s)&summary=irc%2Fflume&resolution=---" \
             | jq -r '.bugs[0].id // empty')
 
           if [ -n "$EXISTING" ]; then
-            echo "Found existing bug #${EXISTING}, adding updated shar..."
+            echo "Found existing bug #${EXISTING}, adding updated patch..."
 
-            # Add comment
             curl -s -X POST "${BUGZILLA}/bug/${EXISTING}/comment" \
               -H "Content-Type: application/json" \
               -d "{
                 \"api_key\": \"${API_KEY}\",
-                \"comment\": \"Updated port for version ${VERSION}.\"
+                \"comment\": \"Updated port to version ${VERSION} (git-format patch).\"
               }"
 
-            # Attach updated shar
             curl -s -X POST "${BUGZILLA}/bug/${EXISTING}/attachment" \
               -H "Content-Type: application/json" \
               -d "{
                 \"api_key\": \"${API_KEY}\",
                 \"ids\": [${EXISTING}],
-                \"data\": \"${SHAR_B64}\",
-                \"file_name\": \"flume-port-${VERSION}.shar\",
-                \"summary\": \"shar for irc/flume ${VERSION}\",
-                \"content_type\": \"application/x-shar\"
+                \"data\": \"${PATCH_B64}\",
+                \"file_name\": \"flume-port-${VERSION}.patch\",
+                \"summary\": \"git diff for irc/flume ${VERSION}\",
+                \"content_type\": \"text/plain\",
+                \"is_patch\": true
               }"
 
-            echo "Updated bug #${EXISTING} with v${VERSION} shar"
+            echo "Updated bug #${EXISTING} with v${VERSION} patch"
           else
             echo "Creating new port submission bug..."
 
@@ -141,17 +140,18 @@ License: Apache-2.0"
             BUG_ID=$(echo "$RESULT" | jq -r '.id // empty')
 
             if [ -n "$BUG_ID" ]; then
-              echo "Created bug #${BUG_ID}, attaching shar..."
+              echo "Created bug #${BUG_ID}, attaching patch..."
 
               curl -s -X POST "${BUGZILLA}/bug/${BUG_ID}/attachment" \
                 -H "Content-Type: application/json" \
                 -d "{
                   \"api_key\": \"${API_KEY}\",
                   \"ids\": [${BUG_ID}],
-                  \"data\": \"${SHAR_B64}\",
-                  \"file_name\": \"flume-port-${VERSION}.shar\",
-                  \"summary\": \"shar for irc/flume ${VERSION}\",
-                  \"content_type\": \"application/x-shar\"
+                  \"data\": \"${PATCH_B64}\",
+                  \"file_name\": \"flume-port-${VERSION}.patch\",
+                  \"summary\": \"git diff for irc/flume ${VERSION}\",
+                  \"content_type\": \"text/plain\",
+                  \"is_patch\": true
                 }"
 
               echo "Submitted new port bug #${BUG_ID}"
