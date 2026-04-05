@@ -49,28 +49,40 @@ jobs:
           print('\n'.join(lines))
           " > packaging/freebsd/Makefile.crates
 
-      - name: Generate shar archive
+      - name: Generate distinfo
         run: |
-          cd packaging/freebsd
-          {
-            echo '#!/bin/sh'
-            echo '# Shell archive for FreeBSD port: irc/flume'
-            echo '# Extract with: sh flume-port.shar'
-            echo ''
-            for f in Makefile Makefile.crates pkg-descr pkg-plist; do
-              echo "echo x - $f"
-              echo "sed 's/^X//' > '$f' << 'SHAR_END_$f'"
-              sed 's/^/X/' "$f"
-              echo "SHAR_END_$f"
-            done
-          } > ../../flume-port.shar
-          echo "Generated flume-port.shar"
+          VERSION="${{ steps.version.outputs.version }}"
+          bash packaging/freebsd/generate-distinfo.sh "${VERSION}"
 
-      - name: Upload shar archive
+      - name: Generate git-format patch
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TMPDIR=$(mktemp -d)
+          mkdir -p "$TMPDIR/irc/flume"
+          cp packaging/freebsd/Makefile packaging/freebsd/Makefile.crates packaging/freebsd/distinfo packaging/freebsd/pkg-descr packaging/freebsd/pkg-plist "$TMPDIR/irc/flume/"
+          cd "$TMPDIR"
+          git init -q
+          git config user.name "Emilio A. Escobar"
+          git config user.email "emilio@flumeirc.io"
+          git add -A
+          git commit -q -m "irc/flume: new port - Modern terminal IRC client v${VERSION}
+
+Flume is a fast, modern, terminal-based IRC client built in Rust.
+Multi-server, IRCv3, Lua/Python scripting, theming, split views,
+DCC, LLM generation, emoji shortcodes.
+
+Homepage: https://github.com/FlumeIRC/flume
+License: Apache-2.0"
+          git format-patch --stdout --root > "$GITHUB_WORKSPACE/flume-freebsd-port.patch"
+          cd "$GITHUB_WORKSPACE"
+          rm -rf "$TMPDIR"
+          echo "Generated flume-freebsd-port.patch"
+
+      - name: Upload patch artifact
         uses: actions/upload-artifact@v4
         with:
           name: freebsd-port
-          path: flume-port.shar
+          path: flume-freebsd-port.patch
 
       - name: Submit or update FreeBSD Bugzilla
         run: |
