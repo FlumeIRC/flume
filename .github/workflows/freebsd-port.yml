@@ -26,50 +26,38 @@ jobs:
         run: |
           TAG="${{ inputs.version || github.ref_name }}"
           VERSION="${TAG#v}"
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Update port version and crates
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           sed -i "s/^DISTVERSION=.*/DISTVERSION=\t${VERSION}/" packaging/freebsd/Makefile
-
-          # Regenerate Makefile.crates from Cargo.lock
-          python3 -c "
-          import re
-          with open('Cargo.lock') as f:
-              content = f.read()
-          packages = re.findall(r'\[\[package\]\]\nname = \"(.+?)\"\nversion = \"(.+?)\"', content)
-          excluded = {'flume-core', 'flume-tui'}
-          crates = sorted([f'{name}-{ver}' for name, ver in packages if name not in excluded])
-          lines = ['CARGO_CRATES=\t' + crates[0] + ' \\\\']
-          for c in crates[1:-1]:
-              lines.append('\t\t' + c + ' \\\\')
-          lines.append('\t\t' + crates[-1])
-          print('\n'.join(lines))
-          " > packaging/freebsd/Makefile.crates
+          python3 packaging/freebsd/generate-makefile-crates.py > packaging/freebsd/Makefile.crates
 
       - name: Generate distinfo
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          bash packaging/freebsd/generate-distinfo.sh "${VERSION}"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash packaging/freebsd/generate-distinfo.sh "${VERSION}"
 
       - name: Generate git-format patch
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          TMPDIR=$(mktemp -d)
-          mkdir -p "$TMPDIR/irc/flume"
-          cp packaging/freebsd/Makefile packaging/freebsd/Makefile.crates packaging/freebsd/distinfo packaging/freebsd/pkg-descr packaging/freebsd/pkg-plist "$TMPDIR/irc/flume/"
-          cd "$TMPDIR"
+          PATCHDIR=$(mktemp -d)
+          mkdir -p "${PATCHDIR}/irc/flume"
+          for f in Makefile Makefile.crates distinfo pkg-descr pkg-plist; do
+            cp "packaging/freebsd/${f}" "${PATCHDIR}/irc/flume/"
+          done
+          cd "${PATCHDIR}"
           git init -q
           git config user.name "Emilio A. Escobar"
           git config user.email "emilio@flumeirc.io"
           git add -A
-          git commit -q -m "irc/flume: new port - Modern terminal IRC client v${VERSION}"
-          git format-patch --stdout --root > "$GITHUB_WORKSPACE/flume-freebsd-port.patch"
-          cd "$GITHUB_WORKSPACE"
-          rm -rf "$TMPDIR"
-          echo "Generated flume-freebsd-port.patch"
+          git commit -q -m "irc/flume: new port v${VERSION}"
+          git format-patch --stdout --root > "${GITHUB_WORKSPACE}/flume-freebsd-port.patch"
+          rm -rf "${PATCHDIR}"
 
       - name: Upload patch artifact
         uses: actions/upload-artifact@v4
@@ -78,78 +66,42 @@ jobs:
           path: flume-freebsd-port.patch
 
       - name: Submit or update FreeBSD Bugzilla
+        env:
+          API_KEY: ${{ secrets.FREEBSD_BUGZILLA_API_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          API_KEY="${{ secrets.FREEBSD_BUGZILLA_API_KEY }}"
-          if [ -z "$API_KEY" ]; then
-            echo "FREEBSD_BUGZILLA_API_KEY not set, skipping Bugzilla submission"
+          if [ -z "${API_KEY}" ]; then
+            echo "FREEBSD_BUGZILLA_API_KEY not set, skipping"
             exit 0
           fi
-          VERSION="${{ steps.version.outputs.version }}"
           BUGZILLA="https://bugs.freebsd.org/bugzilla/rest"
           PATCH_B64=$(base64 -w0 flume-freebsd-port.patch)
 
-          # Search for existing flume port bug
           EXISTING=$(curl -s "${BUGZILLA}/bug?api_key=${API_KEY}&product=Ports%20%26%20Packages&component=Individual%20Port(s)&summary=irc%2Fflume&resolution=---" \
             | jq -r '.bugs[0].id // empty')
 
-          if [ -n "$EXISTING" ]; then
-            echo "Found existing bug #${EXISTING}, adding updated patch..."
-
+          if [ -n "${EXISTING}" ]; then
+            echo "Updating bug #${EXISTING}..."
             curl -s -X POST "${BUGZILLA}/bug/${EXISTING}/comment" \
               -H "Content-Type: application/json" \
-              -d "{
-                \"api_key\": \"${API_KEY}\",
-                \"comment\": \"Updated port to version ${VERSION} (git-format patch).\"
-              }"
-
+              -d "{\"api_key\":\"${API_KEY}\",\"comment\":\"Updated port to version ${VERSION}.\"}"
             curl -s -X POST "${BUGZILLA}/bug/${EXISTING}/attachment" \
               -H "Content-Type: application/json" \
-              -d "{
-                \"api_key\": \"${API_KEY}\",
-                \"ids\": [${EXISTING}],
-                \"data\": \"${PATCH_B64}\",
-                \"file_name\": \"flume-port-${VERSION}.patch\",
-                \"summary\": \"git diff for irc/flume ${VERSION}\",
-                \"content_type\": \"text/plain\",
-                \"is_patch\": true
-              }"
-
-            echo "Updated bug #${EXISTING} with v${VERSION} patch"
+              -d "{\"api_key\":\"${API_KEY}\",\"ids\":[${EXISTING}],\"data\":\"${PATCH_B64}\",\"file_name\":\"flume-port-${VERSION}.patch\",\"summary\":\"git diff for irc/flume ${VERSION}\",\"content_type\":\"text/plain\",\"is_patch\":true}"
+            echo "Updated bug #${EXISTING}"
           else
-            echo "Creating new port submission bug..."
-
+            echo "Creating new bug..."
             RESULT=$(curl -s -X POST "${BUGZILLA}/bug" \
               -H "Content-Type: application/json" \
-              -d "{
-                \"api_key\": \"${API_KEY}\",
-                \"product\": \"Ports & Packages\",
-                \"component\": \"Individual Port(s)\",
-                \"version\": \"Latest\",
-                \"summary\": \"New port: irc/flume: Modern terminal IRC client\",
-                \"description\": \"New port: irc/flume\\n\\nFlume is a fast, modern, terminal-based IRC client built in Rust.\\nMulti-server, IRCv3, Lua/Python scripting, theming, split views,\\nDCC, LLM generation, emoji shortcodes.\\n\\nHomepage: https://github.com/FlumeIRC/flume\\nLicense: Apache-2.0\\nVersion: ${VERSION}\",
-                \"severity\": \"Affects Some People\"
-              }")
-
-            BUG_ID=$(echo "$RESULT" | jq -r '.id // empty')
-
-            if [ -n "$BUG_ID" ]; then
-              echo "Created bug #${BUG_ID}, attaching patch..."
-
+              -d "{\"api_key\":\"${API_KEY}\",\"product\":\"Ports & Packages\",\"component\":\"Individual Port(s)\",\"version\":\"Latest\",\"summary\":\"New port: irc/flume: Modern terminal IRC client\",\"description\":\"New port: irc/flume v${VERSION}\",\"severity\":\"Affects Some People\"}")
+            BUG_ID=$(echo "${RESULT}" | jq -r '.id // empty')
+            if [ -n "${BUG_ID}" ]; then
               curl -s -X POST "${BUGZILLA}/bug/${BUG_ID}/attachment" \
                 -H "Content-Type: application/json" \
-                -d "{
-                  \"api_key\": \"${API_KEY}\",
-                  \"ids\": [${BUG_ID}],
-                  \"data\": \"${PATCH_B64}\",
-                  \"file_name\": \"flume-port-${VERSION}.patch\",
-                  \"summary\": \"git diff for irc/flume ${VERSION}\",
-                  \"content_type\": \"text/plain\",
-                  \"is_patch\": true
-                }"
-
-              echo "Submitted new port bug #${BUG_ID}"
+                -d "{\"api_key\":\"${API_KEY}\",\"ids\":[${BUG_ID}],\"data\":\"${PATCH_B64}\",\"file_name\":\"flume-port-${VERSION}.patch\",\"summary\":\"git diff for irc/flume ${VERSION}\",\"content_type\":\"text/plain\",\"is_patch\":true}"
+              echo "Created bug #${BUG_ID}"
             else
-              echo "Failed to create bug: $RESULT"
+              echo "Failed: ${RESULT}"
               exit 1
             fi
           fi
