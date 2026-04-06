@@ -58,10 +58,11 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
             *buf_name == ss.active_buffer && app.active_group.is_none()
         };
 
-        // For groups, aggregate unread from both member channels
-        let (unread, highlights) = if is_group {
+        // For groups, check if both channels exist and aggregate unread
+        let (unread, highlights, group_ready) = if is_group {
             let group_name = &buf_name[1..buf_name.len()-1];
             if let Some(g) = app.groups.get(group_name) {
+                let ready = g.channels.iter().all(|c| ss.buffers.contains_key(c.as_str()));
                 let u: u32 = g.channels.iter()
                     .filter_map(|c| ss.buffers.get(c.as_str()))
                     .map(|b| b.unread_count)
@@ -70,16 +71,22 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
                     .filter_map(|c| ss.buffers.get(c.as_str()))
                     .map(|b| b.highlight_count)
                     .sum();
-                (u, h)
+                (u, h, ready)
             } else {
-                (0, 0)
+                (0, 0, false)
             }
         } else {
             let buf = ss.buffers.get(buf_name.as_str());
-            (buf.map(|b| b.unread_count).unwrap_or(0), buf.map(|b| b.highlight_count).unwrap_or(0))
+            (buf.map(|b| b.unread_count).unwrap_or(0), buf.map(|b| b.highlight_count).unwrap_or(0), true)
         };
 
-        let (label, style) = if is_active {
+        let (label, style) = if is_group && !group_ready {
+            // Group not ready — channels haven't joined yet
+            (
+                format!(" {}.{} ~", idx, display),
+                Style::default().fg(theme.inactive),
+            )
+        } else if is_active {
             (
                 format!(" {}.{}", idx, display),
                 Style::default()

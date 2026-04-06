@@ -2718,7 +2718,17 @@ fn handle_mouse_event(app: &mut App, event: crossterm::event::MouseEvent) {
 fn switch_to_buffer_or_group(app: &mut App, name: &str) {
     if name.starts_with('[') && name.ends_with(']') {
         let group_name = &name[1..name.len()-1];
-        app.switch_to_group(group_name);
+        // Check if both channels exist before switching
+        let ready = app.groups.get(group_name).map(|g| {
+            app.active_server_state()
+                .map(|ss| g.channels.iter().all(|c| ss.buffers.contains_key(c.as_str())))
+                .unwrap_or(false)
+        }).unwrap_or(false);
+        if ready {
+            app.switch_to_group(group_name);
+        } else {
+            app.system_message(&format!("Group '{}' not ready — waiting for channels to join", group_name));
+        }
     } else {
         app.leave_group();
         if let Some(ss) = app.active_server_state_mut() {
