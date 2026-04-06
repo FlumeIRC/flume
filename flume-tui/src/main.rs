@@ -166,7 +166,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "horizontal" | "h" => SplitDirection::Horizontal,
                     _ => SplitDirection::Vertical,
                 };
-                (name.clone(), app::BufferGroup { channels, ratio, direction })
+                (name.clone(), app::BufferGroup { server: cfg.server.clone(), channels, ratio, direction })
             }).collect()
         },
     );

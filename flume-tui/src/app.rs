@@ -498,6 +498,7 @@ pub struct App {
 /// A buffer group: two channels displayed as a single buffer entry.
 #[derive(Clone)]
 pub struct BufferGroup {
+    pub server: String,
     pub channels: [String; 2],
     pub ratio: u16,
     pub direction: crate::split::SplitDirection,
@@ -606,6 +607,15 @@ impl App {
         if self.servers.contains_key(name) {
             self.active_server = Some(name.to_string());
         }
+    }
+
+    /// Get groups for the active server only.
+    pub fn active_groups(&self) -> HashMap<String, BufferGroup> {
+        let server = self.active_server.as_deref().unwrap_or("");
+        self.groups.iter()
+            .filter(|(_, g)| g.server == server)
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Switch to a buffer group — activates split with both channels.

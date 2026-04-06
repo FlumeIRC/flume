@@ -40,7 +40,7 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
     )));
 
     // Buffer list — sorted alphabetically with group entries
-    let sorted_buffers = ss.sorted_buffers_with_groups(&app.groups, app.active_group.as_deref());
+    let sorted_buffers = ss.sorted_buffers_with_groups(&app.active_groups(), app.active_group.as_deref());
 
     for (visual_idx, buf_name) in sorted_buffers.iter().enumerate() {
         let idx = visual_idx + 1;
@@ -59,9 +59,10 @@ pub fn render(frame: &mut Frame, area: Rect, app: &App, theme: &Theme) {
         };
 
         // For groups, check if both channels exist and aggregate unread
+        let active_groups = app.active_groups();
         let (unread, highlights, group_ready) = if is_group {
             let group_name = &buf_name[1..buf_name.len()-1];
-            if let Some(g) = app.groups.get(group_name) {
+            if let Some(g) = active_groups.get(group_name) {
                 let ready = g.channels.iter().all(|c| ss.buffers.contains_key(c.as_str()));
                 let u: u32 = g.channels.iter()
                     .filter_map(|c| ss.buffers.get(c.as_str()))

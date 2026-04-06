@@ -36,6 +36,7 @@ pub struct FlumeConfig {
 /// A buffer group: two channels displayed side by side as a single buffer entry.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct GroupConfig {
+    pub server: String,
     pub channels: Vec<String>,
     #[serde(default = "default_ratio")]
     pub ratio: String,

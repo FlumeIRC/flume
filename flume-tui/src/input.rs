@@ -219,7 +219,7 @@ async fn execute_action(
         InputAction::BufferJump(n) => {
             let idx = (n as usize) - 1;
             if let Some(ss) = app.active_server_state() {
-                let sorted = ss.sorted_buffers_with_groups(&app.groups, app.active_group.as_deref());
+                let sorted = ss.sorted_buffers_with_groups(&app.active_groups(), app.active_group.as_deref());
                 if let Some(name) = sorted.get(idx).cloned() {
                     switch_to_buffer_or_group(app, &name);
                 }
@@ -1072,7 +1072,7 @@ async fn process_input(
                     if num == 0 {
                         app.system_message("Window numbers start at 1");
                     } else if let Some(ss) = app.active_server_state() {
-                        let sorted = ss.sorted_buffers_with_groups(&app.groups, app.active_group.as_deref());
+                        let sorted = ss.sorted_buffers_with_groups(&app.active_groups(), app.active_group.as_deref());
                         let idx = num - 1;
                         if let Some(name) = sorted.get(idx).cloned() {
                             switch_to_buffer_or_group(app, &name);
@@ -1084,8 +1084,9 @@ async fn process_input(
                     app.viewing_global = false;
                     let target = args.to_lowercase();
 
-                    // Try exact group name first
-                    if app.groups.contains_key(&target) {
+                    // Try exact group name first (active server only)
+                    let active_groups = app.active_groups();
+                    if active_groups.contains_key(&target) {
                         app.switch_to_group(&target);
                     }
                     // Try exact server name (case-insensitive)
@@ -1102,8 +1103,8 @@ async fn process_input(
                             } else if args == "server" {
                                 Some(("buffer", String::new()))
                             } else {
-                                // Substring match on groups
-                                app.groups.keys()
+                                // Substring match on groups (active server)
+                                active_groups.keys()
                                     .find(|g| g.contains(&target))
                                     .cloned()
                                     .map(|g| ("group", g))
@@ -1226,6 +1227,7 @@ async fn process_input(
                     let mut groups_table = toml::Table::new();
                     for (name, group) in &app.groups {
                         let mut entry = toml::Table::new();
+                        entry.insert("server".to_string(), toml::Value::String(group.server.clone()));
                         entry.insert("channels".to_string(), toml::Value::Array(
                             group.channels.iter().map(|c| toml::Value::String(c.clone())).collect()
                         ));
@@ -2682,7 +2684,7 @@ fn handle_mouse_event(app: &mut App, event: crossterm::event::MouseEvent) {
                     app.viewing_global = false;
                     let buf_idx = rel_y - 2;
                     if let Some(ss) = app.active_server_state() {
-                        let sorted = ss.sorted_buffers_with_groups(&app.groups, app.active_group.as_deref());
+                        let sorted = ss.sorted_buffers_with_groups(&app.active_groups(), app.active_group.as_deref());
                         if let Some(name) = sorted.get(buf_idx).cloned() {
                             switch_to_buffer_or_group(app, &name);
                         }
@@ -2814,7 +2816,9 @@ fn handle_group_command(args: &str, app: &mut App) {
                 return;
             }
 
+            let server = app.active_server.clone().unwrap_or_default();
             app.groups.insert(name.clone(), BufferGroup {
+                server,
                 channels: [channels[0].clone(), channels[1].clone()],
                 ratio,
                 direction,
@@ -2824,15 +2828,16 @@ fn handle_group_command(args: &str, app: &mut App) {
             app.system_message("Use /save to persist. Switch to it with /go or Alt+number.");
         }
         "list" | "ls" | "" => {
-            if app.groups.is_empty() {
-                app.system_message("No buffer groups defined");
+            let active_groups = app.active_groups();
+            if active_groups.is_empty() {
+                app.system_message("No buffer groups defined for this server");
                 app.system_message("Usage: /group create <name> [v|h] [ratio] <channel1> <channel2>");
             } else {
                 app.system_message("Buffer groups:");
-                let mut names: Vec<String> = app.groups.keys().cloned().collect();
+                let mut names: Vec<String> = active_groups.keys().cloned().collect();
                 names.sort();
                 let lines: Vec<String> = names.iter().map(|n| {
-                    let g = &app.groups[n];
+                    let g = &active_groups[n];
                     let dir = match g.direction {
                         SplitDirection::Vertical => "v",
                         SplitDirection::Horizontal => "h",
