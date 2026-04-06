@@ -78,7 +78,12 @@ sudo apt update && sudo apt install flume
 ### Fedora / RHEL / CentOS
 
 ```sh
+# Fedora 39+ / RHEL 9+ (DNF5)
 sudo curl -o /etc/yum.repos.d/flume.repo https://pkg.flumeirc.io/rpm/flume.repo
+
+# Fedora 38 and older / RHEL 8 (DNF4)
+sudo dnf config-manager --add-repo https://pkg.flumeirc.io/rpm/flume.repo
+
 sudo dnf install flume
 ```
 
