@@ -42,21 +42,16 @@ jobs:
         if: matrix.use_cross
         run: cargo install cross --git https://github.com/cross-rs/cross
 
-      - name: Detect Python and build
+      - name: Build binary
         run: |
-          FEATURES=""
-          # Skip Python when cross-compiling (PyO3 needs target Python headers)
-          if [ "${{ matrix.use_cross }}" != "true" ]; then
-            if python3 -c "import sysconfig; print(sysconfig.get_path('include'))" 2>/dev/null; then
-              echo "Python detected, enabling python feature"
-              FEATURES="--features python"
-            fi
-          fi
+          # Release binaries are built WITHOUT Python to avoid libpython
+          # version mismatch across distros. Python scripting is available
+          # when building from source with --features python.
           BUILD_CMD="cargo"
           if [ "${{ matrix.use_cross }}" = "true" ]; then
             BUILD_CMD="cross"
           fi
-          PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1 $BUILD_CMD build --release --target ${{ matrix.target }} -p flume-tui $FEATURES
+          $BUILD_CMD build --release --target ${{ matrix.target }} -p flume-tui
 
       - name: Package binary
         run: |
