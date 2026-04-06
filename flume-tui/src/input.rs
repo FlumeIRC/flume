@@ -2689,16 +2689,17 @@ fn handle_mouse_event(app: &mut App, event: crossterm::event::MouseEvent) {
                     }
                 }
             }
-            // Check if click is in secondary split pane → swap focus
-            else {
+            // Click in split pane → focus that pane
+            // Clicking secondary swaps focus; clicking primary is a no-op (already focused)
+            else if app.split.is_some() {
                 let sec = app.secondary_pane_area;
-                if app.split.is_some()
+                let in_secondary = sec.width > 0
                     && x >= sec.x && x < sec.x + sec.width
-                    && y >= sec.y && y < sec.y + sec.height
-                    && sec.width > 0
-                {
+                    && y >= sec.y.saturating_sub(1) && y < sec.y + sec.height;
+                if in_secondary {
                     app.swap_split_focus();
                 }
+                // Clicking primary does nothing — it's already focused
             }
         }
         MouseEventKind::ScrollUp => {

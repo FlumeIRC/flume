@@ -74,8 +74,8 @@ pub fn render(frame: &mut Frame, app: &mut App, theme: &Theme) {
     let center_area = columns[col_idx];
     col_idx += 1;
 
-    // Nick list (right column, full height)
-    if show_nick_list && app.pending_generation.is_none() && app.split.is_none() {
+    // Nick list (right column, full height) — shows nicks for the focused channel
+    if show_nick_list && app.pending_generation.is_none() {
         nick_list::render(frame, columns[col_idx], app, theme);
     }
 
