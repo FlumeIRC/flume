@@ -224,9 +224,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         app.system_message(&format!("Scripts: {} loaded, {} failed", loaded, failed));
         for (name, result) in &script_load_results {
             match result {
-                Ok(()) => app.system_message(&format!("  ✓ {}", name)),
+                Ok(()) => app.system_message(&format!("  [ok] {}", name)),
                 Err(e) => {
-                    app.system_message(&format!("  ✗ {}", name));
+                    app.system_message(&format!("  [error] {}", name));
                     // Show the error broken into lines so it's readable
                     for line in e.lines().take(8) {
                         app.system_message(&format!("    {}", line));
