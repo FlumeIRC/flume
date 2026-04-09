@@ -52,6 +52,15 @@ impl AsyncWrite for Transport {
 
 /// Connect to a server using TLS.
 pub async fn connect_tls(address: &str, port: u16) -> Result<Transport, ConnectionError> {
+    connect_tls_with_options(address, port, false).await
+}
+
+/// Connect to a server using TLS, optionally accepting invalid certificates.
+pub async fn connect_tls_with_options(
+    address: &str,
+    port: u16,
+    accept_invalid_certs: bool,
+) -> Result<Transport, ConnectionError> {
     let tcp = TcpStream::connect((address, port))
         .await
         .map_err(ConnectionError::Tcp)?;
@@ -59,16 +68,28 @@ pub async fn connect_tls(address: &str, port: u16) -> Result<Transport, Connecti
     // Ensure the ring crypto provider is installed (rustls 0.23 requires this)
     let _ = rustls::crypto::ring::default_provider().install_default();
 
-    let mut root_store = rustls::RootCertStore::empty();
-    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-    let tls_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
+    let tls_config = if accept_invalid_certs {
+        // Accept any certificate (self-signed, expired, wrong hostname)
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(std::sync::Arc::new(NoCertVerifier))
+            .with_no_client_auth()
+    } else {
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth()
+    };
 
     let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(tls_config));
-    let server_name = rustls::pki_types::ServerName::try_from(address.to_string())
-        .map_err(|e| ConnectionError::Tls(e.to_string()))?;
+
+    // Handle IP addresses: use a dummy SNI name or try to parse as IP
+    let server_name = match address.parse::<std::net::IpAddr>() {
+        Ok(ip) => rustls::pki_types::ServerName::IpAddress(ip.into()),
+        Err(_) => rustls::pki_types::ServerName::try_from(address.to_string())
+            .map_err(|e| ConnectionError::Tls(e.to_string()))?,
+    };
 
     let tls_stream = connector
         .connect(server_name, tcp)
@@ -76,6 +97,47 @@ pub async fn connect_tls(address: &str, port: u16) -> Result<Transport, Connecti
         .map_err(|e| ConnectionError::Tls(e.to_string()))?;
 
     Ok(Transport::Tls(tls_stream))
+}
+
+/// A certificate verifier that accepts any certificate (for self-signed bouncer certs).
+#[derive(Debug)]
+struct NoCertVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for NoCertVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
 }
 
 /// Connect to a server using plain TCP (no encryption).

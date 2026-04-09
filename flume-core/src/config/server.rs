@@ -23,6 +23,9 @@ pub struct ServerConnectionConfig {
     pub port: u16,
     #[serde(default = "default_true")]
     pub tls: bool,
+    /// Accept invalid/self-signed TLS certificates. Default false.
+    #[serde(default)]
+    pub tls_accept_invalid_certs: bool,
     #[serde(default)]
     pub password: Option<String>,
 }
@@ -158,6 +161,8 @@ pub struct NetworkEntry {
     #[serde(default = "default_true")]
     pub tls: bool,
     #[serde(default)]
+    pub tls_accept_invalid_certs: bool,
+    #[serde(default)]
     pub auth_method: AuthMethod,
     #[serde(default)]
     pub sasl_mechanism: SaslMechanism,
@@ -202,6 +207,7 @@ impl NetworkEntry {
             address,
             port,
             tls,
+            tls_accept_invalid_certs: false,
             auth_method: AuthMethod::None,
             sasl_mechanism: SaslMechanism::Plain,
             sasl_username: String::new(),
@@ -280,6 +286,7 @@ impl From<NetworkEntry> for ServerConfig {
                 address: entry.address,
                 port: entry.port,
                 tls: entry.tls,
+                tls_accept_invalid_certs: entry.tls_accept_invalid_certs,
                 password: entry.password,
             },
             auth: AuthConfig {
@@ -317,6 +324,7 @@ impl From<&ServerConfig> for NetworkEntry {
             address: config.server.address.clone(),
             port: config.server.port,
             tls: config.server.tls,
+            tls_accept_invalid_certs: config.server.tls_accept_invalid_certs,
             auth_method: config.auth.method.clone(),
             sasl_mechanism: config.auth.sasl_mechanism.clone(),
             sasl_username: config.auth.sasl_username.clone(),

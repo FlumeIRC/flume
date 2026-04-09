@@ -122,7 +122,8 @@ impl ServerConnection {
         // Establish connection (TLS or plain)
         tracing::info!("[{}] Connecting to {}:{}", server_name, address, port);
         let stream = if self.server_config.server.tls {
-            transport::connect_tls(address, port).await?
+            let accept_invalid = self.server_config.server.tls_accept_invalid_certs;
+            transport::connect_tls_with_options(address, port, accept_invalid).await?
         } else {
             transport::connect_plain(address, port).await?
         };
