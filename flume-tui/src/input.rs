@@ -743,6 +743,21 @@ async fn process_input(
                     send_cmd(app, UserCommand::RawLine(format!("WHOIS {}", args))).await;
                 }
             }
+            "oper" => {
+                let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                if parts.len() < 2 {
+                    // Try vault for password if only username given
+                    if parts.len() == 1 && !parts[0].is_empty() {
+                        let username = parts[0];
+                        app.system_message(&format!("Usage: /oper <username> <password>"));
+                        app.system_message(&format!("  Tip: store password with /secure set oper_password <pass>"));
+                    } else {
+                        app.system_message("Usage: /oper <username> <password>");
+                    }
+                } else {
+                    send_cmd(app, UserCommand::RawLine(format!("OPER {} {}", parts[0], parts[1]))).await;
+                }
+            }
             "who" => {
                 if args.is_empty() {
                     app.system_message("Usage: /who <mask>");
@@ -1919,6 +1934,7 @@ fn show_help(app: &mut App) {
     app.system_message("    /mouse enable|disable    — Toggle mouse support");
     app.system_message("    /set [key] [value]       — View or change settings");
     app.system_message("    /quote <raw line>        — Send raw IRC line");
+    app.system_message("    /oper <user> <pass>      — Authenticate as IRC operator");
     app.system_message("    /go <name or number>     — Jump to buffer/server");
     app.system_message("    /keys                    — Show keybinding info");
     app.system_message("    /help [command]          — Show help (or help on a command)");
@@ -2087,6 +2103,18 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("/whois <nick>");
             app.system_message("  Query detailed information about a user.");
             app.system_message("  Shows nick, user@host, realname, channels, server, idle time.");
+        }
+        "oper" => {
+            app.system_message("/oper <username> <password>");
+            app.system_message("  Authenticate as an IRC operator.");
+            app.system_message("  Requires a valid O:line on the server.");
+        }
+        "quote" | "raw" => {
+            app.system_message("/quote <raw IRC line>");
+            app.system_message("  Send a raw IRC protocol line to the server.");
+            app.system_message("");
+            app.system_message("  /quote LUSERS");
+            app.system_message("  /quote WALLOPS :Server maintenance at midnight");
         }
         "umode" => {
             app.system_message("/umode [modes]");
