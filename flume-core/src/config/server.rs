@@ -201,12 +201,11 @@ pub struct NetworkEntry {
 impl NetworkEntry {
     /// Create a new network entry with sensible defaults.
     pub fn new(name: String, address: String, port: u16) -> Self {
-        let tls = port == 6697;
         NetworkEntry {
             name,
             address,
             port,
-            tls,
+            tls: true,
             tls_accept_invalid_certs: false,
             auth_method: AuthMethod::None,
             sasl_mechanism: SaslMechanism::Plain,
