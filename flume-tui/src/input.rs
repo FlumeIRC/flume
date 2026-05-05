@@ -1358,7 +1358,16 @@ async fn process_input(
                 }
             }
             "theme" => {
-                if args.is_empty() {
+                if args.starts_with("import ") || args.starts_with("import\t") {
+                    let url = args.strip_prefix("import").unwrap().trim();
+                    if url.is_empty() {
+                        app.system_message("Usage: /theme import <url>");
+                        app.system_message("  Example: /theme import https://github.com/OldJobobo/omarchy-miasma-theme");
+                    } else {
+                        app.system_message(&format!("Importing theme from {}...", url));
+                        app.theme_import_request = Some(url.to_string());
+                    }
+                } else if args.is_empty() {
                     let themes = crate::theme::Theme::list_available();
                     app.system_message("Available themes:");
                     for name in &themes {
@@ -1368,7 +1377,7 @@ async fn process_input(
                             app.system_message(&format!("  {}", name));
                         }
                     }
-                    app.system_message("Usage: /theme <name> | /theme reload");
+                    app.system_message("Usage: /theme <name> | /theme reload | /theme import <url>");
                 } else if args == "reload" {
                     // Signal forced reload
                     app.theme_switch = Some("__reload__".to_string());
@@ -2173,9 +2182,13 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("  /theme <name>      — switch to a theme");
             app.system_message("  /theme reload      — force-reload current theme");
             app.system_message("  /theme path        — show themes directory");
+            app.system_message("  /theme import <url> — import a theme from a GitHub repo");
+            app.system_message("");
+            app.system_message("  Import example:");
+            app.system_message("  /theme import https://github.com/OldJobobo/omarchy-miasma-theme");
+            app.system_message("  Generates both solid and transparent (glass) variants.");
             app.system_message("");
             app.system_message("  Themes are TOML files in ~/.local/share/flume/themes/");
-            app.system_message("  Copy example themes: cp examples/themes/*.toml ~/.local/share/flume/themes/");
         }
         "search" | "grep" | "find" => {
             app.system_message("/search <pattern>");

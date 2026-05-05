@@ -501,6 +501,8 @@ pub struct App {
     pub chat_area: ratatui::layout::Rect,
     /// Last /url listing (cached for /url open <n>).
     pub last_url_list: Vec<String>,
+    /// Pending theme import URL (processed async in main loop).
+    pub theme_import_request: Option<String>,
     // Global buffer for messages when no server is active
     global_messages: VecDeque<DisplayMessage>,
 }
@@ -597,6 +599,7 @@ impl App {
             buffer_list_area: ratatui::layout::Rect::default(),
             chat_area: ratatui::layout::Rect::default(),
             last_url_list: Vec::new(),
+            theme_import_request: None,
             global_messages: VecDeque::new(),
         }
     }

@@ -9,3 +9,4 @@ pub mod irc_format;
 pub mod llm;
 pub mod logging;
 pub mod scripting;
+pub mod theme_import;

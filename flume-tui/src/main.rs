@@ -669,6 +669,67 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
 
+                // Check if /theme import was requested — do it synchronously via blocking
+                if let Some(url) = app.theme_import_request.take() {
+                    let theme_name = flume_core::theme_import::extract_name_from_url(&url);
+                    let fetch_url = flume_core::theme_import::github_raw_url(&url, "colors.toml")
+                        .unwrap_or_else(|| url.clone());
+
+                    // Use a blocking HTTP fetch in a spawn_blocking to not block the event loop
+                    let name_clone = theme_name.clone();
+                    let fetch_result = tokio::task::spawn_blocking(move || -> Result<String, String> {
+                        let resp = reqwest::blocking::Client::builder()
+                            .timeout(std::time::Duration::from_secs(10))
+                            .build()
+                            .map_err(|e| format!("HTTP error: {}", e))?
+                            .get(&fetch_url)
+                            .send()
+                            .map_err(|e| format!("Failed to fetch: {}", e))?;
+
+                        if !resp.status().is_success() {
+                            return Err(format!("HTTP {}: {}", resp.status(), fetch_url));
+                        }
+
+                        let content = resp.text()
+                            .map_err(|e| format!("Failed to read: {}", e))?;
+
+                        let colors = flume_core::theme_import::parse_omarchy_colors(&content, &name_clone)?;
+                        let solid = flume_core::theme_import::map_to_theme(&colors);
+                        let glass = flume_core::theme_import::map_to_glass_theme(&colors);
+
+                        let dir = flume_core::config::themes_dir();
+                        let _ = std::fs::create_dir_all(&dir);
+
+                        let solid_toml = toml::to_string_pretty(&solid)
+                            .map_err(|e| format!("Serialize error: {}", e))?;
+                        let glass_toml = toml::to_string_pretty(&glass)
+                            .map_err(|e| format!("Serialize error: {}", e))?;
+
+                        std::fs::write(dir.join(format!("{}.toml", name_clone)), &solid_toml)
+                            .map_err(|e| format!("Write error: {}", e))?;
+                        std::fs::write(dir.join(format!("{}-glass.toml", name_clone)), &glass_toml)
+                            .map_err(|e| format!("Write error: {}", e))?;
+
+                        Ok(name_clone)
+                    }).await;
+
+                    match fetch_result {
+                        Ok(Ok(name)) => {
+                            app.system_message(&format!("Imported theme: {}", name));
+                            app.system_message(&format!("  Saved: {}.toml", name));
+                            app.system_message(&format!("  Saved: {}-glass.toml", name));
+                            app.system_message("Switching to imported theme...");
+                            app.theme_switch = Some(name);
+                        }
+                        Ok(Err(e)) => {
+                            app.system_message(&format!("Theme import failed: {}", e));
+                        }
+                        Err(e) => {
+                            app.system_message(&format!("Theme import failed: {}", e));
+                        }
+                    }
+                }
+
                 // Check if /script was requested
                 if let Some(args) = app.script_command.take() {
                     if let Some(ref mut mgr) = script_manager {
