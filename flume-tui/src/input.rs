@@ -740,6 +740,16 @@ async fn process_input(
                 if args.is_empty() {
                     app.system_message("Usage: /whois <nick>");
                 } else {
+                    let nick = args.split_whitespace().next().unwrap_or(args);
+                    // Route whois output to PM buffer if one exists for this nick
+                    if let Some(ss) = app.active_server_state_mut() {
+                        let key = crate::app::ServerState::normalize_buffer_name(nick);
+                        if ss.buffers.contains_key(&key) && !crate::app::is_channel(&key) {
+                            ss.pending_whois = Some(key);
+                        } else {
+                            ss.pending_whois = None;
+                        }
+                    }
                     send_cmd(app, UserCommand::RawLine(format!("WHOIS {}", args))).await;
                 }
             }
@@ -1265,6 +1275,14 @@ async fn process_input(
                 // Update mouse setting
                 if let Some(toml::Value::Table(ref mut t)) = config.get_mut("ui") {
                     t.insert("mouse".to_string(), toml::Value::Boolean(app.mouse_enabled));
+                }
+
+                // Update auto_whois_on_pm
+                let general = config
+                    .entry("general")
+                    .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+                if let toml::Value::Table(ref mut t) = general {
+                    t.insert("auto_whois_on_pm".to_string(), toml::Value::Boolean(app.auto_whois_on_pm));
                 }
 
                 let _ = std::fs::create_dir_all(flume_core::config::config_dir());
@@ -2110,6 +2128,12 @@ fn show_help_topic(topic: &str, app: &mut App) {
             app.system_message("/whois <nick>");
             app.system_message("  Query detailed information about a user.");
             app.system_message("  Shows nick, user@host, realname, channels, server, idle time.");
+            app.system_message("");
+            app.system_message("  If a PM buffer exists for the nick, output appears there.");
+            app.system_message("  Otherwise output goes to the server buffer.");
+            app.system_message("");
+            app.system_message("  Auto-whois: /set general.auto_whois_on_pm true");
+            app.system_message("  Automatically /whois nicks that PM you for the first time.");
         }
         "oper" => {
             app.system_message("/oper <username> <password>");

@@ -150,6 +150,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
         flume_config.aliases.clone(),
         flume_config.ui.mouse,
+        flume_config.general.auto_whois_on_pm,
         {
             use crate::split::SplitDirection;
             flume_config.groups.iter().map(|(name, cfg)| {

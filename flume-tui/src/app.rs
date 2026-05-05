@@ -222,6 +222,8 @@ pub struct ServerState {
     pub recent_own_messages: VecDeque<(String, chrono::DateTime<chrono::Utc>)>,
     /// Last raw server notice text (for /snotice last), per server.
     pub last_raw_snotice: Option<String>,
+    /// Pending whois target — routes whois numerics to this buffer instead of server buffer.
+    pub pending_whois: Option<String>,
 }
 
 impl ServerState {
@@ -240,6 +242,7 @@ impl ServerState {
             has_echo_message: false,
             recent_own_messages: VecDeque::new(),
             last_raw_snotice: None,
+            pending_whois: None,
         }
     }
 
@@ -486,6 +489,8 @@ pub struct App {
     pub secondary_pane_area: ratatui::layout::Rect,
     /// User-defined command aliases (runtime copy, persisted via /save).
     pub aliases: std::collections::HashMap<String, String>,
+    /// Auto-whois on first PM from a nick.
+    pub auto_whois_on_pm: bool,
     /// Mouse support enabled.
     pub mouse_enabled: bool,
     /// Flag: mouse state changed, main loop should apply.
@@ -534,6 +539,7 @@ impl App {
         combos: std::collections::HashMap<String, flume_core::config::combos::ComboDefinition>,
         aliases: std::collections::HashMap<String, String>,
         mouse_enabled: bool,
+        auto_whois_on_pm: bool,
         groups: HashMap<String, BufferGroup>,
     ) -> Self {
         // Load snotice rules from file, merge with any in [formats] config
@@ -583,6 +589,7 @@ impl App {
             aliases,
             mouse_enabled,
             mouse_changed: false,
+            auto_whois_on_pm,
             groups,
             active_group: None,
             primary_pane_area: ratatui::layout::Rect::default(),
@@ -1112,6 +1119,15 @@ impl App {
                         };
 
                         let is_pm = !is_channel(&buffer_name) && !is_own;
+                        // Auto-whois on first PM: if enabled and buffer is new
+                        let is_new_pm = is_pm && !ss.buffers.contains_key(&ServerState::normalize_buffer_name(&buffer_name));
+                        if is_new_pm && self.auto_whois_on_pm {
+                            if let Some(tx) = &ss.command_tx {
+                                let _ = tx.try_send(UserCommand::RawLine(format!("WHOIS {}", nick)));
+                            }
+                            ss.pending_whois = Some(ServerState::normalize_buffer_name(&buffer_name));
+                        }
+
                         let highlight =
                             !is_own && (is_pm || is_highlight(text, &our_nick, &highlight_words));
                         if highlight {
@@ -1415,23 +1431,28 @@ impl App {
                             }
 
                             // === WHOIS ===
+                            // Route to PM buffer if pending_whois is set, else server buffer
                             311 => {
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
                                 let nick = p(1);
                                 let user = p(2);
                                 let host = p(3);
                                 let realname = p(5);
-                                ss.add_message("", labeled("whois",
+                                ss.add_message(&wb, labeled("whois",
                                     &format!("{} ({}@{}) — {}", nick, user, host, realname)), scrollback);
                             }
                             312 => {
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
                                 let server = p(2);
                                 let info = p(3);
-                                ss.add_message("", labeled("server", &format!("{} — {}", server, info)), scrollback);
+                                ss.add_message(&wb, labeled("server", &format!("{} — {}", server, info)), scrollback);
                             }
                             313 => {
-                                ss.add_message("", labeled("oper", &last()), scrollback);
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
+                                ss.add_message(&wb, labeled("oper", &last()), scrollback);
                             }
                             317 => {
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
                                 let idle_secs: u64 = p(2).parse().unwrap_or(0);
                                 let idle_str = if idle_secs >= 3600 {
                                     format!("{}h {}m", idle_secs / 3600, (idle_secs % 3600) / 60)
@@ -1440,22 +1461,27 @@ impl App {
                                 } else {
                                     format!("{}s", idle_secs)
                                 };
-                                ss.add_message("", labeled("idle", &idle_str), scrollback);
+                                ss.add_message(&wb, labeled("idle", &idle_str), scrollback);
                             }
                             318 | 369 => {
-                                // RPL_ENDOFWHOIS / RPL_ENDOFWHOWAS — silenced
+                                // RPL_ENDOFWHOIS / RPL_ENDOFWHOWAS — clear pending routing
+                                ss.pending_whois = None;
                             }
                             319 => {
-                                ss.add_message("", labeled("channels", &p(2)), scrollback);
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
+                                ss.add_message(&wb, labeled("channels", &p(2)), scrollback);
                             }
                             330 => {
-                                ss.add_message("", labeled("account", &p(2)), scrollback);
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
+                                ss.add_message(&wb, labeled("account", &p(2)), scrollback);
                             }
                             378 => {
-                                ss.add_message("", labeled("host", &last()), scrollback);
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
+                                ss.add_message(&wb, labeled("host", &last()), scrollback);
                             }
                             671 => {
-                                ss.add_message("", labeled("secure", "using TLS"), scrollback);
+                                let wb = ss.pending_whois.clone().unwrap_or_default();
+                                ss.add_message(&wb, labeled("secure", "using TLS"), scrollback);
                             }
 
                             // === USER modes ===

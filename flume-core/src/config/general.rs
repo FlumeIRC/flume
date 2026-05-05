@@ -83,6 +83,9 @@ pub struct GeneralConfig {
     pub scrollback_lines: usize,
     #[serde(default = "default_url_open_command")]
     pub url_open_command: String,
+    /// Automatically /whois nicks that send you a PM for the first time.
+    #[serde(default)]
+    pub auto_whois_on_pm: bool,
 }
 
 impl Default for GeneralConfig {
@@ -96,6 +99,7 @@ impl Default for GeneralConfig {
             timestamp_format: default_timestamp_format(),
             scrollback_lines: default_scrollback_lines(),
             url_open_command: default_url_open_command(),
+            auto_whois_on_pm: false,
         }
     }
 }
