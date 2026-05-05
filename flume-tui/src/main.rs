@@ -1284,13 +1284,18 @@ fn handle_script_command(args: &str, mgr: &mut ScriptManager, app: &mut app::App
         }
         "list" | "ls" | "" => {
             let scripts = mgr.list_scripts();
+            let installed = flume_core::script_registry::load_installed();
             if scripts.is_empty() {
                 app.system_message("No scripts loaded");
             } else {
                 app.system_message("Loaded scripts:");
                 for info in scripts {
-                    let auto = if info.is_autoload { " (autoload)" } else { "" };
-                    app.system_message(&format!("  {}{}", info.name, auto));
+                    let version = installed.get(&info.name)
+                        .map(|i| format!(" v{} ({})", i.version, i.source))
+                        .unwrap_or_else(|| {
+                            if info.is_autoload { " (autoload)".to_string() } else { " (local)".to_string() }
+                        });
+                    app.system_message(&format!("  {}{}", info.name, version));
                 }
             }
             let cmds = mgr.custom_command_names();
@@ -1301,8 +1306,196 @@ fn handle_script_command(args: &str, mgr: &mut ScriptManager, app: &mut app::App
                 }
             }
         }
+        "search" => {
+            if rest.is_empty() {
+                app.system_message("Usage: /script search <query>");
+                return;
+            }
+            app.system_message("Searching script registry...");
+            match flume_core::script_registry::fetch_index() {
+                Ok(index) => {
+                    let results = flume_core::script_registry::search(&index, rest);
+                    if results.is_empty() {
+                        app.system_message(&format!("No scripts matching '{}'", rest));
+                    } else {
+                        app.system_message(&format!("Found {} script(s):", results.len()));
+                        for s in &results {
+                            let deps = if s.dependencies.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" [deps: {}]", s.dependencies.join(", "))
+                            };
+                            app.system_message(&format!(
+                                "  {} v{} ({}/{}) — {}{}",
+                                s.name, s.version, s.language, s.category, s.description, deps
+                            ));
+                        }
+                        app.system_message("Install with: /script install <name>");
+                    }
+                }
+                Err(e) => app.system_message(&format!("Registry error: {}", e)),
+            }
+        }
+        "info" => {
+            if rest.is_empty() {
+                app.system_message("Usage: /script info <name>");
+                return;
+            }
+            match flume_core::script_registry::fetch_index() {
+                Ok(index) => {
+                    if let Some(s) = flume_core::script_registry::find(&index, rest) {
+                        app.system_message(&format!("Script: {}", s.name));
+                        app.system_message(&format!("  Version:      {}", s.version));
+                        app.system_message(&format!("  Author:       {}", s.author));
+                        app.system_message(&format!("  Language:     {}", s.language));
+                        app.system_message(&format!("  Category:     {}", s.category));
+                        app.system_message(&format!("  Description:  {}", s.description));
+                        if !s.tags.is_empty() {
+                            app.system_message(&format!("  Tags:         {}", s.tags.join(", ")));
+                        }
+                        if !s.flume_min.is_empty() {
+                            let compat = if flume_core::script_registry::is_compatible(s) { "yes" } else { "NO" };
+                            app.system_message(&format!("  Flume min:    {} (compatible: {})", s.flume_min, compat));
+                        }
+                        if !s.dependencies.is_empty() {
+                            app.system_message(&format!("  Dependencies: {}", s.dependencies.join(", ")));
+                        }
+                        let installed = flume_core::script_registry::load_installed();
+                        if let Some(inst) = installed.get(&s.name) {
+                            app.system_message(&format!("  Installed:    v{} ({})", inst.version, inst.installed_at));
+                        } else {
+                            app.system_message("  Installed:    no");
+                        }
+                    } else {
+                        app.system_message(&format!("Script '{}' not found in registry", rest));
+                    }
+                }
+                Err(e) => app.system_message(&format!("Registry error: {}", e)),
+            }
+        }
+        "install" => {
+            if rest.is_empty() {
+                app.system_message("Usage: /script install <name>");
+                return;
+            }
+            app.system_message(&format!("Installing {}...", rest));
+            match flume_core::script_registry::fetch_index() {
+                Ok(index) => {
+                    if let Some(entry) = flume_core::script_registry::find(&index, rest) {
+                        if !flume_core::script_registry::is_compatible(entry) {
+                            app.system_message(&format!(
+                                "Script '{}' requires Flume {} (you have {})",
+                                entry.name, entry.flume_min, env!("CARGO_PKG_VERSION")
+                            ));
+                            return;
+                        }
+                        match flume_core::script_registry::download_script(entry) {
+                            Ok((filename, content)) => {
+                                // Save to appropriate autoload dir
+                                let dir = match entry.language.as_str() {
+                                    "python" => flume_core::scripting::python_autoload_dir(),
+                                    _ => flume_core::scripting::lua_autoload_dir(),
+                                };
+                                let _ = std::fs::create_dir_all(&dir);
+                                let path = dir.join(&filename);
+                                match std::fs::write(&path, &content) {
+                                    Ok(()) => {
+                                        // Auto-load the script
+                                        match mgr.load_script(&path) {
+                                            Ok(()) => {
+                                                flume_core::script_registry::mark_installed(&entry.name, &entry.version);
+                                                app.system_message(&format!("Installed and loaded: {} v{}", entry.name, entry.version));
+                                                if !entry.dependencies.is_empty() {
+                                                    let deps = entry.dependencies.join(" ");
+                                                    let pip = format!("pip install {}", deps);
+                                                    app.system_message(&format!("  Note: requires external deps: {}", pip));
+                                                }
+                                            }
+                                            Err(e) => {
+                                                app.system_message(&format!("Installed but failed to load: {}", e));
+                                                app.system_message(&format!("  File saved at: {}", path.display()));
+                                            }
+                                        }
+                                    }
+                                    Err(e) => app.system_message(&format!("Failed to write script: {}", e)),
+                                }
+                            }
+                            Err(e) => app.system_message(&format!("Download failed: {}", e)),
+                        }
+                    } else {
+                        app.system_message(&format!("Script '{}' not found in registry. Use /script search", rest));
+                    }
+                }
+                Err(e) => app.system_message(&format!("Registry error: {}", e)),
+            }
+        }
+        "update" => {
+            let installed = flume_core::script_registry::load_installed();
+            if installed.is_empty() {
+                app.system_message("No registry scripts installed");
+                return;
+            }
+            app.system_message("Checking for updates...");
+            match flume_core::script_registry::fetch_index() {
+                Ok(index) => {
+                    let targets: Vec<&str> = if rest.is_empty() {
+                        installed.keys().map(|s| s.as_str()).collect()
+                    } else {
+                        vec![rest]
+                    };
+                    let mut updated = 0;
+                    for name in targets {
+                        let inst = match installed.get(name) {
+                            Some(i) => i,
+                            None => {
+                                app.system_message(&format!("  {} — not installed from registry", name));
+                                continue;
+                            }
+                        };
+                        if let Some(entry) = flume_core::script_registry::find(&index, name) {
+                            if entry.version != inst.version {
+                                match flume_core::script_registry::download_script(entry) {
+                                    Ok((filename, content)) => {
+                                        let dir = match entry.language.as_str() {
+                                            "python" => flume_core::scripting::python_autoload_dir(),
+                                            _ => flume_core::scripting::lua_autoload_dir(),
+                                        };
+                                        let path = dir.join(&filename);
+                                        if std::fs::write(&path, &content).is_ok() {
+                                            flume_core::script_registry::mark_installed(&entry.name, &entry.version);
+                                            app.system_message(&format!("  {} — updated v{} → v{}", name, inst.version, entry.version));
+                                            // Try to reload
+                                            let _ = mgr.reload_script(name);
+                                            updated += 1;
+                                        }
+                                    }
+                                    Err(e) => app.system_message(&format!("  {} — download failed: {}", name, e)),
+                                }
+                            } else {
+                                app.system_message(&format!("  {} — up to date (v{})", name, inst.version));
+                            }
+                        }
+                    }
+                    if updated > 0 {
+                        app.system_message(&format!("Updated {} script(s). Restart or /script reload to apply.", updated));
+                    }
+                }
+                Err(e) => app.system_message(&format!("Registry error: {}", e)),
+            }
+        }
+        "registry" => {
+            if rest == "refresh" {
+                app.system_message("Refreshing registry cache...");
+                match flume_core::script_registry::refresh_cache() {
+                    Ok(index) => app.system_message(&format!("Registry refreshed: {} scripts available", index.scripts.len())),
+                    Err(e) => app.system_message(&format!("Failed to refresh: {}", e)),
+                }
+            } else {
+                app.system_message("Usage: /script registry refresh");
+            }
+        }
         _ => {
-            app.system_message("Usage: /script load|unload|reload|list [name]");
+            app.system_message("Usage: /script load|unload|reload|list|search|install|update|info [name]");
         }
     }
 }

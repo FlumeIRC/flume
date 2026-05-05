@@ -9,4 +9,6 @@ pub mod irc_format;
 pub mod llm;
 pub mod logging;
 pub mod scripting;
+#[cfg(feature = "llm")]
+pub mod script_registry;
 pub mod theme_import;
